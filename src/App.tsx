@@ -1,9 +1,9 @@
-﻿import { useCallback, useEffect, useMemo, useState } from 'react'
-import './App.css'
-import type { ReactNode } from 'react'
-import { useMqtt } from './hooks/useMqtt'
-import type { MqttStatus } from './hooks/useMqtt'
-import { buildBaseMessage } from './types/psdk'
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import "./App.css";
+import type { ReactNode } from "react";
+import { useMqtt } from "./hooks/useMqtt";
+import type { MqttStatus } from "./hooks/useMqtt";
+import { buildBaseMessage } from "./types/psdk";
 import type {
   CommandPlayProgress,
   CommandLogEntry,
@@ -12,8 +12,8 @@ import type {
   ServiceReplyData,
   SpeakerCommandMethod,
   SpeakerPlayProgressData,
-  SpeakerProgressMethod
-} from './types/psdk'
+  SpeakerProgressMethod,
+} from "./types/psdk";
 import {
   buildEventsTopic,
   buildServicesReplyTopic,
@@ -21,159 +21,167 @@ import {
   buildStateTopic,
   getPlayModeLabel,
   getSystemStateLabel,
-  getWorkModeLabel
-} from './lib/psdk'
-import { createId } from './lib/id'
+  getWorkModeLabel,
+} from "./lib/psdk";
+import { createId } from "./lib/id";
 
-const ONLINE_THRESHOLD_MS = 15000
-const MAX_LOGS = 50
-const DEFAULT_PSDK_INDEX = 2
+const ONLINE_THRESHOLD_MS = 15000;
+const MAX_LOGS = 50;
+const DEFAULT_PSDK_INDEX = 2;
 
 const SPEAKER_METHODS: SpeakerCommandMethod[] = [
-  'speaker_audio_play_start',
-  'speaker_tts_play_start',
-  'speaker_replay',
-  'speaker_play_stop',
-  'speaker_play_mode_set',
-  'speaker_play_volume_set'
-]
+  "speaker_audio_play_start",
+  "speaker_tts_play_start",
+  "speaker_replay",
+  "speaker_play_stop",
+  "speaker_play_mode_set",
+  "speaker_play_volume_set",
+];
 
 const SPEAKER_PROGRESS_METHODS: SpeakerProgressMethod[] = [
-  'speaker_audio_play_start_progress',
-  'speaker_tts_play_start_progress'
-]
+  "speaker_audio_play_start_progress",
+  "speaker_tts_play_start_progress",
+];
 
 const PROGRESS_TO_COMMAND_METHOD: Record<
   SpeakerProgressMethod,
   SpeakerCommandMethod
 > = {
-  speaker_audio_play_start_progress: 'speaker_audio_play_start',
-  speaker_tts_play_start_progress: 'speaker_tts_play_start'
-}
+  speaker_audio_play_start_progress: "speaker_audio_play_start",
+  speaker_tts_play_start_progress: "speaker_tts_play_start",
+};
 
 const isSpeakerMethod = (value: string): value is SpeakerCommandMethod =>
-  SPEAKER_METHODS.includes(value as SpeakerCommandMethod)
+  SPEAKER_METHODS.includes(value as SpeakerCommandMethod);
 
-const isSpeakerProgressMethod = (value: string): value is SpeakerProgressMethod =>
-  SPEAKER_PROGRESS_METHODS.includes(value as SpeakerProgressMethod)
+const isSpeakerProgressMethod = (
+  value: string,
+): value is SpeakerProgressMethod =>
+  SPEAKER_PROGRESS_METHODS.includes(value as SpeakerProgressMethod);
 
 const formatProgressLabel = (playProgress?: CommandPlayProgress) => {
-  if (!playProgress) return 'N/A'
+  if (!playProgress) return "N/A";
 
-  const parts: string[] = []
-  if (typeof playProgress.percent === 'number') {
-    parts.push(`${playProgress.percent}%`)
+  const parts: string[] = [];
+  if (typeof playProgress.percent === "number") {
+    parts.push(`${playProgress.percent}%`);
   }
   if (playProgress.stepKey) {
-    parts.push(playProgress.stepKey)
+    parts.push(playProgress.stepKey);
   }
   if (playProgress.status) {
-    parts.push(playProgress.status)
+    parts.push(playProgress.status);
   }
 
-  if (parts.length === 0) return 'Received'
-  return parts.join(' · ')
-}
+  if (parts.length === 0) return "Received";
+  return parts.join(" · ");
+};
 
 const formatTimestamp = (value?: number | null) => {
-  if (!value) return 'N/A'
-  return new Date(value).toLocaleString()
-}
+  if (!value) return "N/A";
+  return new Date(value).toLocaleString();
+};
 
 const StatusBadge = ({ label, tone }: { label: string; tone: string }) => (
   <span className={`badge ${tone}`}>
     <span className="h-2 w-2 rounded-full bg-current" />
     {label}
   </span>
-)
+);
 
-const SectionHeader = ({ title, subtitle }: { title: string; subtitle: string }) => (
+const SectionHeader = ({
+  title,
+  subtitle,
+}: {
+  title: string;
+  subtitle: string;
+}) => (
   <div>
     <p className="panel-title">{subtitle}</p>
     <h2 className="panel-heading">{title}</h2>
   </div>
-)
+);
 
 const HoverDetailRow = ({
   label,
   available,
-  detail
+  detail,
 }: {
-  label: string
-  available: boolean
-  detail: ReactNode
+  label: string;
+  available: boolean;
+  detail: ReactNode;
 }) => (
   <div className="group relative flex cursor-help items-center justify-between gap-3 rounded-lg border border-steel-700/60 bg-coal-900/55 px-3 py-2">
     <span className="text-steel-400">{label}</span>
     <span
       className={`chip shrink-0 ${
         available
-          ? 'border-signal-500/70 text-signal-400'
-          : 'border-steel-700/80 text-steel-400'
+          ? "border-signal-500/70 text-signal-400"
+          : "border-steel-700/80 text-steel-400"
       }`}
     >
-      {available ? 'Available' : 'No Data'}
+      {available ? "Available" : "No Data"}
     </span>
     <div className="pointer-events-none absolute -top-2 right-0 z-20 w-72 -translate-y-full rounded-lg border border-steel-700/80 bg-coal-950/95 p-3 text-xs text-steel-200 opacity-0 shadow-panel transition duration-150 group-hover:opacity-100">
       {detail}
     </div>
   </div>
-)
+);
 
 const mqttStatusTone: Record<MqttStatus, string> = {
-  connected: 'border-signal-500/70 bg-signal-500/15 text-signal-400',
-  connecting: 'border-amber-500/70 bg-amber-500/15 text-amber-400',
-  reconnecting: 'border-amber-500/70 bg-amber-500/15 text-amber-400',
-  offline: 'border-steel-600/60 bg-coal-900/50 text-steel-300',
-  error: 'border-warn-500/70 bg-warn-500/10 text-warn-500'
-}
+  connected: "border-signal-500/70 bg-signal-500/15 text-signal-400",
+  connecting: "border-amber-500/70 bg-amber-500/15 text-amber-400",
+  reconnecting: "border-amber-500/70 bg-amber-500/15 text-amber-400",
+  offline: "border-steel-600/60 bg-coal-900/50 text-steel-300",
+  error: "border-warn-500/70 bg-warn-500/10 text-warn-500",
+};
 
-const onlineTone: Record<'online' | 'offline' | 'unknown', string> = {
-  online: 'border-signal-500/70 bg-signal-500/15 text-signal-400',
-  offline: 'border-warn-500/70 bg-warn-500/10 text-warn-500',
-  unknown: 'border-steel-600/60 bg-coal-900/50 text-steel-300'
-}
+const onlineTone: Record<"online" | "offline" | "unknown", string> = {
+  online: "border-signal-500/70 bg-signal-500/15 text-signal-400",
+  offline: "border-warn-500/70 bg-warn-500/10 text-warn-500",
+  unknown: "border-steel-600/60 bg-coal-900/50 text-steel-300",
+};
 
 function App() {
-  const [mqttEnabled, setMqttEnabled] = useState(false)
+  const [mqttEnabled, setMqttEnabled] = useState(false);
   const [brokerUrl, setBrokerUrl] = useState(
-    import.meta.env.VITE_MQTT_URL ?? ''
-  )
+    import.meta.env.VITE_MQTT_URL ?? "",
+  );
   const [mqttUsername, setMqttUsername] = useState(
-    import.meta.env.VITE_MQTT_USERNAME ?? ''
-  )
+    import.meta.env.VITE_MQTT_USERNAME ?? "",
+  );
   const [mqttPassword, setMqttPassword] = useState(
-    import.meta.env.VITE_MQTT_PASSWORD ?? ''
-  )
+    import.meta.env.VITE_MQTT_PASSWORD ?? "",
+  );
   const [gatewaySn, setGatewaySn] = useState(
-    import.meta.env.VITE_GATEWAY_SN ?? ''
-  )
+    import.meta.env.VITE_GATEWAY_SN ?? "",
+  );
   const [deviceSn, setDeviceSn] = useState(
-    import.meta.env.VITE_DEVICE_SN ?? ''
-  )
+    import.meta.env.VITE_DEVICE_SN ?? "",
+  );
 
-  const [psdkIndex, setPsdkIndex] = useState(DEFAULT_PSDK_INDEX)
-  const [audioName, setAudioName] = useState('')
-  const [audioUrl, setAudioUrl] = useState('')
-  const [audioMd5, setAudioMd5] = useState('')
-  const [ttsName, setTtsName] = useState('')
-  const [ttsText, setTtsText] = useState('')
-  const [ttsMd5, setTtsMd5] = useState('')
-  const [playMode, setPlayMode] = useState<0 | 1>(0)
-  const [playVolume, setPlayVolume] = useState(20)
+  const [psdkIndex, setPsdkIndex] = useState(DEFAULT_PSDK_INDEX);
+  const [audioName, setAudioName] = useState("");
+  const [audioUrl, setAudioUrl] = useState("");
+  const [audioMd5, setAudioMd5] = useState("");
+  const [ttsName, setTtsName] = useState("");
+  const [ttsText, setTtsText] = useState("");
+  const [ttsMd5, setTtsMd5] = useState("");
+  const [playMode, setPlayMode] = useState<0 | 1>(0);
+  const [playVolume, setPlayVolume] = useState(20);
 
   const [floatingWindow, setFloatingWindow] = useState<{
-    text: string
-    psdkIndex: number
-    timestamp: number
-  } | null>(null)
-  const [psdkState, setPsdkState] = useState<PsdkStatePayload | null>(null)
-  const [psdkStateAt, setPsdkStateAt] = useState<number | null>(null)
-  const [commandLogs, setCommandLogs] = useState<CommandLogEntry[]>([])
-  const [logModalOpen, setLogModalOpen] = useState(false)
-  const [now, setNow] = useState(() => Date.now())
+    text: string;
+    psdkIndex: number;
+    timestamp: number;
+  } | null>(null);
+  const [psdkState, setPsdkState] = useState<PsdkStatePayload | null>(null);
+  const [psdkStateAt, setPsdkStateAt] = useState<number | null>(null);
+  const [commandLogs, setCommandLogs] = useState<CommandLogEntry[]>([]);
+  const [logModalOpen, setLogModalOpen] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
 
-  const clientId = useMemo(() => `psdk-debug-${createId()}`, [])
+  const clientId = useMemo(() => `psdk-debug-${createId()}`, []);
 
   const mqttOptions = useMemo(
     () => ({
@@ -182,46 +190,46 @@ function App() {
       clientId,
       clean: true,
       connectTimeout: 5000,
-      reconnectPeriod: 2000
+      reconnectPeriod: 2000,
     }),
-    [clientId, mqttPassword, mqttUsername]
-  )
+    [clientId, mqttPassword, mqttUsername],
+  );
 
   const eventsTopic = useMemo(
-    () => (gatewaySn ? buildEventsTopic(gatewaySn) : ''),
-    [gatewaySn]
-  )
+    () => (gatewaySn ? buildEventsTopic(gatewaySn) : ""),
+    [gatewaySn],
+  );
   const servicesTopic = useMemo(
-    () => (gatewaySn ? buildServicesTopic(gatewaySn) : ''),
-    [gatewaySn]
-  )
+    () => (gatewaySn ? buildServicesTopic(gatewaySn) : ""),
+    [gatewaySn],
+  );
   const servicesReplyTopic = useMemo(
-    () => (gatewaySn ? buildServicesReplyTopic(gatewaySn) : ''),
-    [gatewaySn]
-  )
+    () => (gatewaySn ? buildServicesReplyTopic(gatewaySn) : ""),
+    [gatewaySn],
+  );
   const stateTopic = useMemo(
-    () => (deviceSn ? buildStateTopic(deviceSn) : ''),
-    [deviceSn]
-  )
+    () => (deviceSn ? buildStateTopic(deviceSn) : ""),
+    [deviceSn],
+  );
 
   const updateLogFromReply = useCallback(
     (
       ids: { tid?: string; bid?: string },
       method: SpeakerCommandMethod,
       result: number,
-      ts?: number
+      ts?: number,
     ) => {
       setCommandLogs((prev) => {
-        const nextStatus = result === 0 ? 'success' : 'failure'
+        const nextStatus = result === 0 ? "success" : "failure";
         const idx = prev.findIndex(
           (entry) =>
             (ids.tid && entry.tid === ids.tid) ||
-            (ids.bid && entry.bid === ids.bid)
-        )
+            (ids.bid && entry.bid === ids.bid),
+        );
 
-        const tid = ids.tid
+        const tid = ids.tid;
         if (idx === -1) {
-          if (!tid) return prev
+          if (!tid) return prev;
 
           const entry: CommandLogEntry = {
             bid: ids.bid,
@@ -229,49 +237,51 @@ function App() {
             method,
             sentAt: ts ?? Date.now(),
             status: nextStatus,
-            result
-          }
-          return [entry, ...prev].slice(0, MAX_LOGS)
+            result,
+          };
+          return [entry, ...prev].slice(0, MAX_LOGS);
         }
-        const updated = [...prev]
-        updated[idx] = { ...updated[idx], status: nextStatus, result }
-        return updated
-      })
+        const updated = [...prev];
+        updated[idx] = { ...updated[idx], status: nextStatus, result };
+        return updated;
+      });
     },
-    []
-  )
+    [],
+  );
 
   const updateLogFromProgress = useCallback(
     (
       ids: { tid?: string; bid?: string },
       method: SpeakerProgressMethod,
       data: SpeakerPlayProgressData,
-      ts?: number
+      ts?: number,
     ) => {
       setCommandLogs((prev) => {
         const idx = prev.findIndex((entry) => {
           const idMatched =
             (ids.tid && entry.tid === ids.tid) ||
-            (ids.bid && entry.bid === ids.bid)
-          if (!idMatched) return false
+            (ids.bid && entry.bid === ids.bid);
+          if (!idMatched) return false;
 
-          const expectedMethod = PROGRESS_TO_COMMAND_METHOD[method]
-          return entry.method === expectedMethod
-        })
-        if (idx === -1) return prev
+          const expectedMethod = PROGRESS_TO_COMMAND_METHOD[method];
+          return entry.method === expectedMethod;
+        });
+        if (idx === -1) return prev;
 
         const percent =
-          typeof data.output?.progress?.percent === 'number'
+          typeof data.output?.progress?.percent === "number"
             ? data.output.progress.percent
-            : undefined
+            : undefined;
         const stepKey =
-          typeof data.output?.progress?.step_key === 'string'
+          typeof data.output?.progress?.step_key === "string"
             ? data.output.progress.step_key
-            : undefined
+            : undefined;
         const status =
-          typeof data.output?.status === 'string' ? data.output.status : undefined
+          typeof data.output?.status === "string"
+            ? data.output.status
+            : undefined;
 
-        const updated = [...prev]
+        const updated = [...prev];
         updated[idx] = {
           ...updated[idx],
           playProgress: {
@@ -279,75 +289,75 @@ function App() {
             percent,
             stepKey,
             status,
-            updatedAt: ts ?? Date.now()
-          }
-        }
+            updatedAt: ts ?? Date.now(),
+          },
+        };
 
-        return updated
-      })
+        return updated;
+      });
     },
-    []
-  )
+    [],
+  );
 
   const handleMessage = useCallback(
     (topic: string, message: string) => {
-      let payload: unknown
+      let payload: unknown;
       try {
-        payload = JSON.parse(message)
+        payload = JSON.parse(message);
       } catch {
-        return
+        return;
       }
 
-      if (!payload || typeof payload !== 'object') return
+      if (!payload || typeof payload !== "object") return;
       const record = payload as {
-        method?: string
-        data?: unknown
-        bid?: string
-        tid?: string
-        timestamp?: number
-      }
+        method?: string;
+        data?: unknown;
+        bid?: string;
+        tid?: string;
+        timestamp?: number;
+      };
 
-      if (record.method === 'psdk_floating_window_text') {
-        const data = record.data as FloatingWindowData | undefined
-        if (data && typeof data.value === 'string') {
-          const timestamp = record.timestamp ?? Date.now()
+      if (record.method === "psdk_floating_window_text") {
+        const data = record.data as FloatingWindowData | undefined;
+        if (data && typeof data.value === "string") {
+          const timestamp = Date.now();
           const nextIndex =
-            typeof data.psdk_index === 'number'
+            typeof data.psdk_index === "number"
               ? data.psdk_index
-              : Number(data.psdk_index ?? 0)
+              : Number(data.psdk_index ?? 0);
           setFloatingWindow({
             text: data.value,
             psdkIndex: Number.isFinite(nextIndex) ? nextIndex : 0,
-            timestamp
-          })
+            timestamp,
+          });
         }
       }
 
       if (stateTopic && topic === stateTopic) {
-        const data = record.data as PsdkStatePayload | undefined
+        const data = record.data as PsdkStatePayload | undefined;
         if (data && Array.isArray(data.psdk_widget_values)) {
-          setPsdkState(data)
-          setPsdkStateAt(record.timestamp ?? Date.now())
+          setPsdkState(data);
+          setPsdkStateAt(record.timestamp ?? Date.now());
         }
       }
 
       if (servicesReplyTopic && topic === servicesReplyTopic) {
-        const data = record.data as ServiceReplyData | undefined
+        const data = record.data as ServiceReplyData | undefined;
         if (
           data &&
-          typeof data.result === 'number' &&
+          typeof data.result === "number" &&
           record.method &&
           isSpeakerMethod(record.method)
         ) {
           updateLogFromReply(
             {
               tid: record.tid,
-              bid: record.bid
+              bid: record.bid,
             },
             record.method,
             data.result,
-            record.timestamp
-          )
+            record.timestamp,
+          );
         }
       }
 
@@ -357,17 +367,17 @@ function App() {
         record.method &&
         isSpeakerProgressMethod(record.method)
       ) {
-        const data = record.data as SpeakerPlayProgressData | undefined
+        const data = record.data as SpeakerPlayProgressData | undefined;
         if (data && (record.tid || record.bid)) {
           updateLogFromProgress(
             {
               tid: record.tid,
-              bid: record.bid
+              bid: record.bid,
             },
             record.method,
             data,
-            record.timestamp
-          )
+            record.timestamp,
+          );
         }
       }
     },
@@ -376,147 +386,155 @@ function App() {
       servicesReplyTopic,
       stateTopic,
       updateLogFromProgress,
-      updateLogFromReply
-    ]
-  )
+      updateLogFromReply,
+    ],
+  );
 
-  const { isConnected, status, error, subscribe, unsubscribe, publish } = useMqtt({
-    brokerUrl,
-    options: mqttOptions,
-    enabled: mqttEnabled,
-    onMessage: handleMessage
-  })
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 1000)
-    return () => window.clearInterval(timer)
-  }, [])
+  const { isConnected, status, error, subscribe, unsubscribe, publish } =
+    useMqtt({
+      brokerUrl,
+      options: mqttOptions,
+      enabled: mqttEnabled,
+      onMessage: handleMessage,
+    });
 
   useEffect(() => {
-    if (!isConnected) return
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!isConnected) return;
     const topics = [eventsTopic, servicesReplyTopic, stateTopic].filter(
-      (topic) => topic.length > 0
-    )
-    topics.forEach(subscribe)
+      (topic) => topic.length > 0,
+    );
+    topics.forEach(subscribe);
     return () => {
-      topics.forEach(unsubscribe)
-    }
-  }, [eventsTopic, isConnected, servicesReplyTopic, stateTopic, subscribe, unsubscribe])
+      topics.forEach(unsubscribe);
+    };
+  }, [
+    eventsTopic,
+    isConnected,
+    servicesReplyTopic,
+    stateTopic,
+    subscribe,
+    unsubscribe,
+  ]);
 
   useEffect(() => {
-    if (!logModalOpen) return
+    if (!logModalOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setLogModalOpen(false)
+      if (event.key === "Escape") {
+        setLogModalOpen(false);
       }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [logModalOpen])
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [logModalOpen]);
 
-  const lastFloatingAt = floatingWindow?.timestamp ?? null
+  const lastFloatingAt = floatingWindow?.timestamp ?? null;
   const onlineState = lastFloatingAt
     ? now - lastFloatingAt <= ONLINE_THRESHOLD_MS
-      ? 'online'
-      : 'offline'
-    : 'unknown'
+      ? "online"
+      : "offline"
+    : "unknown";
 
-  const psdkEntries = psdkState?.psdk_widget_values ?? []
+  const psdkEntries = psdkState?.psdk_widget_values ?? [];
   const activeEntry =
     psdkEntries.find((entry) => entry.psdk_index === psdkIndex) ??
-    psdkEntries[0]
+    psdkEntries[0];
 
   const canConnect =
     brokerUrl.trim().length > 0 &&
     gatewaySn.trim().length > 0 &&
-    deviceSn.trim().length > 0
+    deviceSn.trim().length > 0;
 
-  const connectionCollapsed = status === 'connected'
-  const canSend = isConnected
+  const connectionCollapsed = status === "connected";
+  const canSend = isConnected;
 
   const sendCommand = useCallback(
     (method: SpeakerCommandMethod, data: Record<string, unknown>) => {
       if (!isConnected) {
-        window.alert('MQTT 未连接，请先连接后再下发指令。')
-        return
+        window.alert("MQTT 未连接，请先连接后再下发指令。");
+        return;
       }
 
       if (!servicesTopic) {
-        window.alert('缺少 Gateway SN，无法下发指令。')
-        return
+        window.alert("缺少 Gateway SN，无法下发指令。");
+        return;
       }
 
-      const message = buildBaseMessage(method, data)
-      const payload = JSON.stringify(message)
+      const message = buildBaseMessage(method, data);
+      const payload = JSON.stringify(message);
       setCommandLogs((prev) => {
         const entry: CommandLogEntry = {
           bid: message.bid,
           tid: message.tid,
           method,
           sentAt: message.timestamp,
-          status: 'pending'
-        }
-        return [entry, ...prev].slice(0, MAX_LOGS)
-      })
-      publish(servicesTopic, payload)
+          status: "pending",
+        };
+        return [entry, ...prev].slice(0, MAX_LOGS);
+      });
+      publish(servicesTopic, payload);
     },
-    [isConnected, publish, servicesTopic]
-  )
+    [isConnected, publish, servicesTopic],
+  );
 
   const handleAudioPlayStart = () => {
-    sendCommand('speaker_audio_play_start', {
+    sendCommand("speaker_audio_play_start", {
       psdk_index: psdkIndex,
       file: {
-        format: 'pcm',
+        format: "pcm",
         md5: audioMd5,
         name: audioName,
-        url: audioUrl
-      }
-    })
-  }
+        url: audioUrl,
+      },
+    });
+  };
 
   const handleTtsPlayStart = () => {
-    sendCommand('speaker_tts_play_start', {
+    sendCommand("speaker_tts_play_start", {
       psdk_index: psdkIndex,
       tts: {
         md5: ttsMd5,
         name: ttsName,
-        text: ttsText
-      }
-    })
-  }
+        text: ttsText,
+      },
+    });
+  };
 
   const handleReplay = () => {
-    sendCommand('speaker_replay', { psdk_index: psdkIndex })
-  }
+    sendCommand("speaker_replay", { psdk_index: psdkIndex });
+  };
 
   const handleStop = () => {
-    sendCommand('speaker_play_stop', { psdk_index: psdkIndex })
-  }
+    sendCommand("speaker_play_stop", { psdk_index: psdkIndex });
+  };
 
   const handlePlayModeSet = () => {
-    sendCommand('speaker_play_mode_set', {
+    sendCommand("speaker_play_mode_set", {
       psdk_index: psdkIndex,
-      play_mode: playMode
-    })
-  }
+      play_mode: playMode,
+    });
+  };
 
   const handleVolumeSet = () => {
-    sendCommand('speaker_play_volume_set', {
+    sendCommand("speaker_play_volume_set", {
       psdk_index: psdkIndex,
-      play_volume: playVolume
-    })
-  }
+      play_volume: playVolume,
+    });
+  };
 
   const audioValid =
     audioName.trim().length > 0 &&
     audioUrl.trim().length > 0 &&
-    audioMd5.trim().length > 0
+    audioMd5.trim().length > 0;
 
   const ttsValid =
     ttsName.trim().length > 0 &&
     ttsText.trim().length > 0 &&
-    ttsMd5.trim().length > 0
+    ttsMd5.trim().length > 0;
 
   return (
     <div className="min-h-screen">
@@ -533,7 +551,10 @@ function App() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <StatusBadge label={`MQTT ${status}`} tone={mqttStatusTone[status]} />
+            <StatusBadge
+              label={`MQTT ${status}`}
+              tone={mqttStatusTone[status]}
+            />
             <StatusBadge
               label={`PSDK ${onlineState}`}
               tone={onlineTone[onlineState]}
@@ -571,7 +592,10 @@ function App() {
                     <p className="text-[11px] uppercase tracking-[0.2em] text-steel-500">
                       Broker
                     </p>
-                    <p className="mt-1 break-all text-sm text-steel-100" title={brokerUrl}>
+                    <p
+                      className="mt-1 break-all text-sm text-steel-100"
+                      title={brokerUrl}
+                    >
                       {brokerUrl}
                     </p>
                   </div>
@@ -580,7 +604,10 @@ function App() {
                     <p className="text-[11px] uppercase tracking-[0.2em] text-steel-500">
                       Gateway SN
                     </p>
-                    <p className="mt-1 break-all text-sm text-steel-100" title={gatewaySn}>
+                    <p
+                      className="mt-1 break-all text-sm text-steel-100"
+                      title={gatewaySn}
+                    >
                       {gatewaySn}
                     </p>
                   </div>
@@ -589,7 +616,10 @@ function App() {
                     <p className="text-[11px] uppercase tracking-[0.2em] text-steel-500">
                       Client ID
                     </p>
-                    <p className="mt-1 break-all font-mono text-xs text-steel-200" title={clientId}>
+                    <p
+                      className="mt-1 break-all font-mono text-xs text-steel-200"
+                      title={clientId}
+                    >
                       {clientId}
                     </p>
                   </div>
@@ -598,7 +628,10 @@ function App() {
                     <p className="text-[11px] uppercase tracking-[0.2em] text-steel-500">
                       Device SN
                     </p>
-                    <p className="mt-1 break-all text-sm text-steel-100" title={deviceSn}>
+                    <p
+                      className="mt-1 break-all text-sm text-steel-100"
+                      title={deviceSn}
+                    >
                       {deviceSn}
                     </p>
                   </div>
@@ -667,8 +700,10 @@ function App() {
                       step={1}
                       value={psdkIndex}
                       onChange={(event) => {
-                        const nextValue = Number(event.target.value)
-                        setPsdkIndex(Number.isFinite(nextValue) ? nextValue : 0)
+                        const nextValue = Number(event.target.value);
+                        setPsdkIndex(
+                          Number.isFinite(nextValue) ? nextValue : 0,
+                        );
                       }}
                     />
                   </div>
@@ -706,9 +741,10 @@ function App() {
               </>
             )}
 
-            {status === 'error' && (
+            {status === "error" && (
               <div className="mt-4 rounded-lg border border-warn-500/40 bg-warn-500/10 px-4 py-2 text-sm text-warn-500">
-                MQTT connection failed: {error ?? 'Please verify broker and credentials.'}
+                MQTT connection failed:{" "}
+                {error ?? "Please verify broker and credentials."}
               </div>
             )}
           </section>
@@ -738,7 +774,7 @@ function App() {
                       </p>
                     </div>
                   ) : (
-                    'No floating window message yet.'
+                    "No floating window message yet."
                   )
                 }
               />
@@ -748,7 +784,7 @@ function App() {
                 detail={
                   psdkStateAt
                     ? `Last synchronized: ${formatTimestamp(psdkStateAt)}`
-                    : 'No state payload received yet.'
+                    : "No state payload received yet."
                 }
               />
             </div>
@@ -766,11 +802,13 @@ function App() {
                 Current Text
               </p>
               <p className="mt-3 text-lg text-steel-100">
-                {floatingWindow?.text ?? 'No floating window message yet.'}
+                {floatingWindow?.text ?? "No floating window message yet."}
               </p>
               <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-steel-400">
-                <span>PSDK Index: {floatingWindow?.psdkIndex ?? 'N/A'}</span>
-                <span>Updated: {formatTimestamp(floatingWindow?.timestamp)}</span>
+                <span>PSDK Index: {floatingWindow?.psdkIndex ?? "N/A"}</span>
+                <span>
+                  Updated: {formatTimestamp(floatingWindow?.timestamp)}
+                </span>
               </div>
             </div>
           </section>
@@ -785,13 +823,15 @@ function App() {
                       <span className="text-xs uppercase tracking-[0.2em] text-steel-400">
                         Active Payload
                       </span>
-                      <span className="chip">Index {activeEntry.psdk_index}</span>
+                      <span className="chip">
+                        Index {activeEntry.psdk_index}
+                      </span>
                     </div>
                     <div className="mt-3 grid gap-2 text-xs text-steel-300">
-                      <span>Name: {activeEntry.psdk_name ?? 'N/A'}</span>
-                      <span>SN: {activeEntry.psdk_sn ?? 'N/A'}</span>
-                      <span>Version: {activeEntry.psdk_version ?? 'N/A'}</span>
-                      <span>Lib: {activeEntry.psdk_lib_version ?? 'N/A'}</span>
+                      <span>Name: {activeEntry.psdk_name ?? "N/A"}</span>
+                      <span>SN: {activeEntry.psdk_sn ?? "N/A"}</span>
+                      <span>Version: {activeEntry.psdk_version ?? "N/A"}</span>
+                      <span>Lib: {activeEntry.psdk_lib_version ?? "N/A"}</span>
                     </div>
                   </div>
                   <div className="rounded-xl border border-steel-700/40 bg-coal-900/60 p-4">
@@ -803,15 +843,19 @@ function App() {
                         Mode: {getWorkModeLabel(activeEntry.speaker?.work_mode)}
                       </span>
                       <span>
-                        Play Mode:{' '}
+                        Play Mode:{" "}
                         {getPlayModeLabel(activeEntry.speaker?.play_mode)}
                       </span>
                       <span>
-                        System:{' '}
+                        System:{" "}
                         {getSystemStateLabel(activeEntry.speaker?.system_state)}
                       </span>
-                      <span>Volume: {activeEntry.speaker?.play_volume ?? 'N/A'}</span>
-                      <span>File: {activeEntry.speaker?.play_file_name ?? 'N/A'}</span>
+                      <span>
+                        Volume: {activeEntry.speaker?.play_volume ?? "N/A"}
+                      </span>
+                      <span>
+                        File: {activeEntry.speaker?.play_file_name ?? "N/A"}
+                      </span>
                     </div>
                   </div>
                 </>
@@ -982,10 +1026,7 @@ function App() {
         <section className="panel">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <SectionHeader title="Command Results" subtitle="services_reply" />
-            <button
-              className="btn"
-              onClick={() => setLogModalOpen(true)}
-            >
+            <button className="btn" onClick={() => setLogModalOpen(true)}>
               Log ({commandLogs.length})
             </button>
           </div>
@@ -1004,8 +1045,14 @@ function App() {
               onClick={(event) => event.stopPropagation()}
             >
               <div className="flex flex-wrap items-start justify-between gap-4">
-                <SectionHeader title="Command Results" subtitle="services_reply" />
-                <button className="btn btn-danger" onClick={() => setLogModalOpen(false)}>
+                <SectionHeader
+                  title="Command Results"
+                  subtitle="services_reply"
+                />
+                <button
+                  className="btn btn-danger"
+                  onClick={() => setLogModalOpen(false)}
+                >
                   Close
                 </button>
               </div>
@@ -1045,11 +1092,11 @@ function App() {
                             <td className="px-4 py-3">
                               <span
                                 className={`chip ${
-                                  entry.status === 'success'
-                                    ? 'border-signal-500/70 text-signal-400'
-                                    : entry.status === 'failure'
-                                    ? 'border-warn-500/70 text-warn-500'
-                                    : 'border-amber-500/70 text-amber-400'
+                                  entry.status === "success"
+                                    ? "border-signal-500/70 text-signal-400"
+                                    : entry.status === "failure"
+                                      ? "border-warn-500/70 text-warn-500"
+                                      : "border-amber-500/70 text-amber-400"
                                 }`}
                               >
                                 {entry.status}
@@ -1059,7 +1106,7 @@ function App() {
                               {formatProgressLabel(entry.playProgress)}
                             </td>
                             <td className="px-4 py-3 text-steel-300">
-                              {entry.result ?? 'N/A'}
+                              {entry.result ?? "N/A"}
                             </td>
                             <td className="px-4 py-3 font-mono text-[11px] text-steel-500">
                               {entry.tid}
@@ -1076,7 +1123,7 @@ function App() {
         )}
       </div>
     </div>
-  )
+  );
 }
 
-export default App
+export default App;
