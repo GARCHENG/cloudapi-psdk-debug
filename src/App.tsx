@@ -28,6 +28,10 @@ import { createId } from "./lib/id";
 const ONLINE_THRESHOLD_MS = 15000;
 const MAX_LOGS = 50;
 const DEFAULT_PSDK_INDEX = 2;
+const DEFAULT_AUDIO_PLAY_NAME =
+  import.meta.env.VITE_AUDIO_PLAY_DEFAULT_NAME ?? "";
+const DEFAULT_AUDIO_PLAY_URL = import.meta.env.VITE_AUDIO_PLAY_DEFAULT_URL ?? "";
+const DEFAULT_AUDIO_PLAY_MD5 = import.meta.env.VITE_AUDIO_PLAY_DEFAULT_MD5 ?? "";
 
 const SPEAKER_METHODS: SpeakerCommandMethod[] = [
   "speaker_audio_play_start",
@@ -493,6 +497,12 @@ function App() {
     });
   };
 
+  const handleFillDefaultAudioPlay = () => {
+    setAudioName(DEFAULT_AUDIO_PLAY_NAME);
+    setAudioUrl(DEFAULT_AUDIO_PLAY_URL);
+    setAudioMd5(DEFAULT_AUDIO_PLAY_MD5);
+  };
+
   const handleTtsPlayStart = () => {
     sendCommand("speaker_tts_play_start", {
       psdk_index: psdkIndex,
@@ -872,9 +882,14 @@ function App() {
           <SectionHeader title="Speaker Control" subtitle="Commands" />
           <div className="mt-6 grid gap-4 lg:grid-cols-2">
             <div className="rounded-xl border border-steel-700/40 bg-coal-900/60 p-4">
-              <p className="text-xs uppercase tracking-[0.2em] text-steel-400">
-                Audio Play Start
-              </p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs uppercase tracking-[0.2em] text-steel-400">
+                  Audio Play Start
+                </p>
+                <button className="btn" onClick={handleFillDefaultAudioPlay}>
+                  default
+                </button>
+              </div>
               <div className="mt-3 grid gap-3">
                 <input
                   className="input"
