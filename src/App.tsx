@@ -1190,7 +1190,7 @@ function App() {
           </div>
 
           <div className="mt-6 grid gap-4 lg:grid-cols-2">
-            <div className="rounded-xl border border-steel-700/40 bg-coal-900/60 p-4">
+            <div className="flex h-full flex-col rounded-xl border border-steel-700/40 bg-coal-900/60 p-4">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs uppercase tracking-[0.2em] text-steel-400">
                   Audio Play Start
@@ -1199,7 +1199,7 @@ function App() {
                   default
                 </button>
               </div>
-              <div className="mt-3 grid gap-3">
+              <div className="mt-3 grid flex-1 gap-3">
                 <input
                   className="input"
                   value={audioName}
@@ -1219,7 +1219,7 @@ function App() {
                   placeholder="File MD5"
                 />
                 <button
-                  className="btn btn-primary"
+                  className="btn btn-primary mt-auto"
                   onClick={handleAudioPlayStart}
                   disabled={!canSend || !audioValid || pendingAudioPlayStart}
                   aria-busy={pendingAudioPlayStart}
@@ -1236,11 +1236,11 @@ function App() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-steel-700/40 bg-coal-900/60 p-4">
+            <div className="flex h-full flex-col rounded-xl border border-steel-700/40 bg-coal-900/60 p-4">
               <p className="text-xs uppercase tracking-[0.2em] text-steel-400">
                 TTS Play Start
               </p>
-              <div className="mt-3 grid gap-3">
+              <div className="mt-3 grid flex-1 gap-3">
                 <input
                   className="input"
                   value={ttsName}
@@ -1260,7 +1260,7 @@ function App() {
                   placeholder="TTS MD5"
                 />
                 <button
-                  className="btn btn-primary"
+                  className="btn btn-primary mt-auto"
                   onClick={handleTtsPlayStart}
                   disabled={!canSend || !ttsValid || pendingTtsPlayStart}
                   aria-busy={pendingTtsPlayStart}
