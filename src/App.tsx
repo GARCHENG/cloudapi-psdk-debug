@@ -1,5 +1,6 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from 'react'
 import './App.css'
+import type { ReactNode } from 'react'
 import { useMqtt } from './hooks/useMqtt'
 import type { MqttStatus } from './hooks/useMqtt'
 import { buildBaseMessage } from './types/psdk'
@@ -53,6 +54,32 @@ const SectionHeader = ({ title, subtitle }: { title: string; subtitle: string })
   <div>
     <p className="panel-title">{subtitle}</p>
     <h2 className="panel-heading">{title}</h2>
+  </div>
+)
+
+const HoverDetailRow = ({
+  label,
+  available,
+  detail
+}: {
+  label: string
+  available: boolean
+  detail: ReactNode
+}) => (
+  <div className="group relative flex cursor-help items-center justify-between gap-3 rounded-lg border border-steel-700/60 bg-coal-900/55 px-3 py-2">
+    <span className="text-steel-400">{label}</span>
+    <span
+      className={`chip shrink-0 ${
+        available
+          ? 'border-signal-500/70 text-signal-400'
+          : 'border-steel-700/80 text-steel-400'
+      }`}
+    >
+      {available ? 'Available' : 'No Data'}
+    </span>
+    <div className="pointer-events-none absolute -top-2 right-0 z-20 w-72 -translate-y-full rounded-lg border border-steel-700/80 bg-coal-950/95 p-3 text-xs text-steel-200 opacity-0 shadow-panel transition duration-150 group-hover:opacity-100">
+      {detail}
+    </div>
   </div>
 )
 
@@ -264,6 +291,8 @@ function App() {
     gatewaySn.trim().length > 0 &&
     deviceSn.trim().length > 0
 
+  const connectionCollapsed = status === 'connected'
+
   const canSend = isConnected && servicesTopic.length > 0
 
   const sendCommand = useCallback(
@@ -365,109 +394,180 @@ function App() {
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
           <section className="panel">
-            <SectionHeader title="Connection" subtitle="MQTT / Identity" />
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="label">Broker URL</label>
-                <input
-                  className="input mt-2"
-                  value={brokerUrl}
-                  onChange={(event) => setBrokerUrl(event.target.value)}
-                  placeholder="ws://broker/mqtt"
-                />
-              </div>
-              <div>
-                <label className="label">Gateway SN</label>
-                <input
-                  className="input mt-2"
-                  value={gatewaySn}
-                  onChange={(event) => setGatewaySn(event.target.value)}
-                  placeholder="Gateway serial"
-                />
-              </div>
-              <div>
-                <label className="label">Username</label>
-                <input
-                  className="input mt-2"
-                  value={mqttUsername}
-                  onChange={(event) => setMqttUsername(event.target.value)}
-                  placeholder="MQTT username"
-                />
-              </div>
-              <div>
-                <label className="label">Device SN</label>
-                <input
-                  className="input mt-2"
-                  value={deviceSn}
-                  onChange={(event) => setDeviceSn(event.target.value)}
-                  placeholder="Device serial"
-                />
-              </div>
-              <div>
-                <label className="label">Password</label>
-                <input
-                  className="input mt-2"
-                  type="password"
-                  value={mqttPassword}
-                  onChange={(event) => setMqttPassword(event.target.value)}
-                  placeholder="MQTT password"
-                />
-              </div>
-              <div>
-                <label className="label">PSDK Index</label>
-                <input
-                  className="input mt-2"
-                  type="number"
-                  min={0}
-                  max={3}
-                  step={1}
-                  value={psdkIndex}
-                  onChange={(event) => {
-                    const nextValue = Number(event.target.value)
-                    setPsdkIndex(Number.isFinite(nextValue) ? nextValue : 0)
-                  }}
-                />
-              </div>
-              <div className="flex flex-col justify-between">
-                <span className="label">Client ID</span>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className="chip font-mono text-[11px] text-steel-200">
-                    {clientId}
+            <div className="w-full">
+              <SectionHeader title="Connection" subtitle="MQTT / Identity" />
+            </div>
+
+            {connectionCollapsed ? (
+              <div className="mt-6 rounded-xl border border-steel-700/55 bg-coal-900/55 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusBadge
+                    label={`MQTT ${status}`}
+                    tone={mqttStatusTone[status]}
+                  />
+                  <span className="chip border-signal-500/40 text-signal-400">
+                    Connection Stable
                   </span>
+                  <button
+                    className="btn btn-danger ml-auto"
+                    onClick={() => setMqttEnabled(false)}
+                    disabled={!mqttEnabled}
+                  >
+                    Disconnect
+                  </button>
+                </div>
+
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-lg border border-steel-700/60 bg-coal-950/40 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-steel-500">
+                      Broker
+                    </p>
+                    <p className="mt-1 break-all text-sm text-steel-100" title={brokerUrl}>
+                      {brokerUrl}
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg border border-steel-700/60 bg-coal-950/40 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-steel-500">
+                      Gateway SN
+                    </p>
+                    <p className="mt-1 break-all text-sm text-steel-100" title={gatewaySn}>
+                      {gatewaySn}
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg border border-steel-700/60 bg-coal-950/40 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-steel-500">
+                      Client ID
+                    </p>
+                    <p className="mt-1 break-all font-mono text-xs text-steel-200" title={clientId}>
+                      {clientId}
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg border border-steel-700/60 bg-coal-950/40 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-steel-500">
+                      Device SN
+                    </p>
+                    <p className="mt-1 break-all text-sm text-steel-100" title={deviceSn}>
+                      {deviceSn}
+                    </p>
+                  </div>
+                </div>
+
+                <p className="mt-3 text-xs text-steel-500">
+                  Subscribed topics: events, state, services_reply
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="mt-6 grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="label">Broker URL</label>
+                    <input
+                      className="input mt-2"
+                      value={brokerUrl}
+                      onChange={(event) => setBrokerUrl(event.target.value)}
+                      placeholder="ws://broker/mqtt"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Gateway SN</label>
+                    <input
+                      className="input mt-2"
+                      value={gatewaySn}
+                      onChange={(event) => setGatewaySn(event.target.value)}
+                      placeholder="Gateway serial"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Username</label>
+                    <input
+                      className="input mt-2"
+                      value={mqttUsername}
+                      onChange={(event) => setMqttUsername(event.target.value)}
+                      placeholder="MQTT username"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Device SN</label>
+                    <input
+                      className="input mt-2"
+                      value={deviceSn}
+                      onChange={(event) => setDeviceSn(event.target.value)}
+                      placeholder="Device serial"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Password</label>
+                    <input
+                      className="input mt-2"
+                      type="password"
+                      value={mqttPassword}
+                      onChange={(event) => setMqttPassword(event.target.value)}
+                      placeholder="MQTT password"
+                    />
+                  </div>
+                  <div>
+                    <label className="label">PSDK Index</label>
+                    <input
+                      className="input mt-2"
+                      type="number"
+                      min={0}
+                      max={3}
+                      step={1}
+                      value={psdkIndex}
+                      onChange={(event) => {
+                        const nextValue = Number(event.target.value)
+                        setPsdkIndex(Number.isFinite(nextValue) ? nextValue : 0)
+                      }}
+                    />
+                  </div>
+                  <div className="flex flex-col justify-between">
+                    <span className="label">Client ID</span>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className="chip font-mono text-[11px] text-steel-200">
+                        {clientId}
+                      </span>
+                      <span className="text-xs text-steel-500">
+                        Auto-generated
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-6 flex flex-wrap items-center gap-3">
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => setMqttEnabled(true)}
+                    disabled={!canConnect || mqttEnabled}
+                  >
+                    Connect
+                  </button>
+                  <button
+                    className="btn btn-danger"
+                    onClick={() => setMqttEnabled(false)}
+                    disabled={!mqttEnabled}
+                  >
+                    Disconnect
+                  </button>
                   <span className="text-xs text-steel-500">
-                    Auto-generated
+                    Subscribed topics: events, state, services_reply
                   </span>
                 </div>
-              </div>
-            </div>
-            <div className="mt-6 flex flex-wrap items-center gap-3">
-              <button
-                className="btn btn-primary"
-                onClick={() => setMqttEnabled(true)}
-                disabled={!canConnect || mqttEnabled}
-              >
-                Connect
-              </button>
-              <button
-                className="btn btn-danger"
-                onClick={() => setMqttEnabled(false)}
-                disabled={!mqttEnabled}
-              >
-                Disconnect
-              </button>
-              <span className="text-xs text-steel-500">
-                Subscribed topics: events, state, services_reply
-              </span>
-            </div>
-            {error && (
+              </>
+            )}
+
+            {status === 'error' && (
               <div className="mt-4 rounded-lg border border-warn-500/40 bg-warn-500/10 px-4 py-2 text-sm text-warn-500">
-                {error}
+                MQTT connection failed: {error ?? 'Please verify broker and credentials.'}
               </div>
             )}
           </section>
 
           <section className="panel">
-            <SectionHeader title="Live Status" subtitle="Heartbeat" />
+            <div className="w-full">
+              <SectionHeader title="Live Status" subtitle="Heartbeat" />
+            </div>
             <div className="mt-6 space-y-4 text-sm">
               <div className="flex items-center justify-between">
                 <span className="text-steel-400">MQTT Status</span>
@@ -477,18 +577,31 @@ function App() {
                 <span className="text-steel-400">PSDK Online</span>
                 <span className="text-steel-100">{onlineState}</span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-steel-400">Last Floating</span>
-                <span className="text-steel-100">
-                  {formatTimestamp(lastFloatingAt)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-steel-400">State Sync</span>
-                <span className="text-steel-100">
-                  {formatTimestamp(psdkStateAt)}
-                </span>
-              </div>
+              <HoverDetailRow
+                label="Last Floating"
+                available={Boolean(lastFloatingAt)}
+                detail={
+                  floatingWindow ? (
+                    <div className="space-y-2">
+                      <p>Updated: {formatTimestamp(lastFloatingAt)}</p>
+                      <p className="break-words text-steel-300">
+                        Text: {floatingWindow.text}
+                      </p>
+                    </div>
+                  ) : (
+                    'No floating window message yet.'
+                  )
+                }
+              />
+              <HoverDetailRow
+                label="State Sync"
+                available={Boolean(psdkStateAt)}
+                detail={
+                  psdkStateAt
+                    ? `Last synchronized: ${formatTimestamp(psdkStateAt)}`
+                    : 'No state payload received yet.'
+                }
+              />
             </div>
           </section>
         </div>
