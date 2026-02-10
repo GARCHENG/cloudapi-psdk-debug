@@ -1,12 +1,14 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import "./App.css";
 import type { ReactNode } from "react";
+import { useRef } from "react";
 import { useMqtt } from "./hooks/useMqtt";
 import type { MqttStatus } from "./hooks/useMqtt";
 import { buildBaseMessage } from "./types/psdk";
 import type {
   CommandPlayProgress,
   CommandLogEntry,
+  CommandStatus,
   FloatingWindowData,
   PsdkStatePayload,
   ServiceReplyData,
@@ -146,6 +148,59 @@ const onlineTone: Record<"online" | "offline" | "unknown", string> = {
   unknown: "border-steel-600/60 bg-coal-900/50 text-steel-300",
 };
 
+const commandStatusTone: Record<CommandStatus, string> = {
+  pending: "border-amber-500/70 text-amber-400",
+  success: "border-signal-500/70 text-signal-400",
+  failure: "border-warn-500/70 text-warn-500",
+  timeout: "border-warn-500/70 text-warn-500",
+};
+
+const COMMAND_METHOD_LABELS: Record<SpeakerCommandMethod, string> = {
+  speaker_audio_play_start: "Audio Play Start",
+  speaker_tts_play_start: "TTS Play Start",
+  speaker_replay: "Replay",
+  speaker_play_stop: "Stop",
+  speaker_play_mode_set: "Play Mode Set",
+  speaker_play_volume_set: "Play Volume Set",
+};
+
+const COMMAND_FEEDBACK_TTL_MS = 6000;
+const COMMAND_REPLY_TIMEOUT_MS = 10000;
+const MAX_FEEDBACKS = 4;
+
+type CommandFeedbackStatus = Exclude<CommandStatus, "pending">;
+
+interface CommandFeedback {
+  id: string;
+  tid: string;
+  method: SpeakerCommandMethod;
+  status: CommandFeedbackStatus;
+  result?: number;
+  createdAt: number;
+}
+
+interface PendingCommand {
+  method: SpeakerCommandMethod;
+  sentAt: number;
+}
+
+interface TimeoutMeta {
+  tid: string;
+  method: SpeakerCommandMethod;
+}
+
+const formatShortTid = (tid: string) => {
+  if (tid.length <= 16) return tid;
+  return `${tid.slice(0, 8)}...${tid.slice(-6)}`;
+};
+
+const InlineSpinner = ({ className = "h-3 w-3" }: { className?: string }) => (
+  <span
+    aria-hidden
+    className={`inline-block ${className} animate-spin rounded-full border-2 border-current border-r-transparent`}
+  />
+);
+
 function App() {
   const [mqttEnabled, setMqttEnabled] = useState(false);
   const [brokerUrl, setBrokerUrl] = useState(
@@ -182,8 +237,12 @@ function App() {
   const [psdkState, setPsdkState] = useState<PsdkStatePayload | null>(null);
   const [psdkStateAt, setPsdkStateAt] = useState<number | null>(null);
   const [commandLogs, setCommandLogs] = useState<CommandLogEntry[]>([]);
+  const [commandFeedbacks, setCommandFeedbacks] = useState<CommandFeedback[]>([]);
   const [logModalOpen, setLogModalOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const pendingCommandsRef = useRef<Map<string, PendingCommand>>(new Map());
+  const feedbackTimerRef = useRef<Map<string, number>>(new Map());
+  const commandTimeoutRef = useRef<Map<string, number>>(new Map());
 
   const clientId = useMemo(() => `psdk-debug-${createId()}`, []);
 
@@ -216,6 +275,99 @@ function App() {
     [deviceSn],
   );
 
+  const removeFeedback = useCallback((id: string) => {
+    const timer = feedbackTimerRef.current.get(id);
+    if (timer) {
+      window.clearTimeout(timer);
+      feedbackTimerRef.current.delete(id);
+    }
+    setCommandFeedbacks((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  const clearCommandTimeout = useCallback((tid: string) => {
+    const timeoutId = commandTimeoutRef.current.get(tid);
+    if (timeoutId) {
+      window.clearTimeout(timeoutId);
+      commandTimeoutRef.current.delete(tid);
+    }
+  }, []);
+
+  const removePendingCommand = useCallback(
+    (tid: string) => {
+      pendingCommandsRef.current.delete(tid);
+      clearCommandTimeout(tid);
+    },
+    [clearCommandTimeout],
+  );
+
+  const pushFeedback = useCallback(
+    (
+      params: Pick<CommandFeedback, "tid" | "method" | "status" | "result">,
+    ) => {
+      const id = createId();
+      const next: CommandFeedback = {
+        ...params,
+        id,
+        createdAt: Date.now(),
+      };
+
+      setCommandFeedbacks((prev) => [next, ...prev].slice(0, MAX_FEEDBACKS));
+      const timer = window.setTimeout(() => {
+        removeFeedback(id);
+      }, COMMAND_FEEDBACK_TTL_MS);
+      feedbackTimerRef.current.set(id, timer);
+    },
+    [removeFeedback],
+  );
+
+  const markCommandTimeout = useCallback(
+    ({ tid, method }: TimeoutMeta) => {
+      const pendingCommand = pendingCommandsRef.current.get(tid);
+      if (!pendingCommand) return;
+
+      removePendingCommand(tid);
+
+      let didTimeout = false;
+      setCommandLogs((prev) => {
+        const idx = prev.findIndex((entry) => entry.tid === tid);
+        if (idx === -1) return prev;
+        if (prev[idx].status !== "pending") return prev;
+
+        didTimeout = true;
+        const updated = [...prev];
+        updated[idx] = {
+          ...updated[idx],
+          status: "timeout",
+        };
+        return updated;
+      });
+
+      if (didTimeout) {
+        pushFeedback({
+          tid,
+          method: pendingCommand.method ?? method,
+          status: "timeout",
+        });
+      }
+    },
+    [pushFeedback, removePendingCommand],
+  );
+
+  useEffect(
+    () => () => {
+      commandTimeoutRef.current.forEach((timeoutId) => {
+        window.clearTimeout(timeoutId);
+      });
+      commandTimeoutRef.current.clear();
+
+      feedbackTimerRef.current.forEach((timer) => {
+        window.clearTimeout(timer);
+      });
+      feedbackTimerRef.current.clear();
+    },
+    [],
+  );
+
   const updateLogFromReply = useCallback(
     (
       ids: { tid?: string; bid?: string },
@@ -223,23 +375,32 @@ function App() {
       result: number,
       ts?: number,
     ) => {
+      const nextStatus: CommandFeedbackStatus =
+        result === 0 ? "success" : "failure";
+      const tid = ids.tid;
+      const pendingCommand = tid
+        ? pendingCommandsRef.current.get(tid)
+        : undefined;
+
+      if (tid && pendingCommand) {
+        removePendingCommand(tid);
+      }
+
       setCommandLogs((prev) => {
-        const nextStatus = result === 0 ? "success" : "failure";
         const idx = prev.findIndex(
           (entry) =>
-            (ids.tid && entry.tid === ids.tid) ||
+            (tid && entry.tid === tid) ||
             (ids.bid && entry.bid === ids.bid),
         );
 
-        const tid = ids.tid;
         if (idx === -1) {
           if (!tid) return prev;
 
           const entry: CommandLogEntry = {
             bid: ids.bid,
             tid,
-            method,
-            sentAt: ts ?? Date.now(),
+            method: pendingCommand?.method ?? method,
+            sentAt: pendingCommand?.sentAt ?? ts ?? Date.now(),
             status: nextStatus,
             result,
           };
@@ -249,8 +410,17 @@ function App() {
         updated[idx] = { ...updated[idx], status: nextStatus, result };
         return updated;
       });
+
+      if (tid && pendingCommand) {
+        pushFeedback({
+          tid,
+          method: pendingCommand.method,
+          status: nextStatus,
+          result,
+        });
+      }
     },
-    [],
+    [pushFeedback, removePendingCommand],
   );
 
   const updateLogFromProgress = useCallback(
@@ -347,18 +517,24 @@ function App() {
 
       if (servicesReplyTopic && topic === servicesReplyTopic) {
         const data = record.data as ServiceReplyData | undefined;
+        const methodFromTid = record.tid
+          ? pendingCommandsRef.current.get(record.tid)?.method
+          : undefined;
+        const replyMethod =
+          record.method && isSpeakerMethod(record.method)
+            ? record.method
+            : methodFromTid;
         if (
           data &&
           typeof data.result === "number" &&
-          record.method &&
-          isSpeakerMethod(record.method)
+          replyMethod
         ) {
           updateLogFromReply(
             {
               tid: record.tid,
               bid: record.bid,
             },
-            record.method,
+            replyMethod,
             data.result,
             record.timestamp,
           );
@@ -470,6 +646,19 @@ function App() {
 
       const message = buildBaseMessage(method, data);
       const payload = JSON.stringify(message);
+      pendingCommandsRef.current.set(message.tid, {
+        method,
+        sentAt: message.timestamp,
+      });
+
+      const timeoutId = window.setTimeout(() => {
+        markCommandTimeout({
+          tid: message.tid,
+          method,
+        });
+      }, COMMAND_REPLY_TIMEOUT_MS);
+      commandTimeoutRef.current.set(message.tid, timeoutId);
+
       setCommandLogs((prev) => {
         const entry: CommandLogEntry = {
           bid: message.bid,
@@ -482,8 +671,29 @@ function App() {
       });
       publish(servicesTopic, payload);
     },
-    [isConnected, publish, servicesTopic],
+    [isConnected, markCommandTimeout, publish, servicesTopic],
   );
+
+  const pendingCommandSet = useMemo(() => {
+    const next = new Set<SpeakerCommandMethod>();
+    commandLogs.forEach((entry) => {
+      if (entry.status === "pending") {
+        next.add(entry.method);
+      }
+    });
+    return next;
+  }, [commandLogs]);
+
+  const pendingTotal = useMemo(
+    () => commandLogs.filter((entry) => entry.status === "pending").length,
+    [commandLogs],
+  );
+  const pendingAudioPlayStart = pendingCommandSet.has("speaker_audio_play_start");
+  const pendingTtsPlayStart = pendingCommandSet.has("speaker_tts_play_start");
+  const pendingReplay = pendingCommandSet.has("speaker_replay");
+  const pendingStop = pendingCommandSet.has("speaker_play_stop");
+  const pendingPlayModeSet = pendingCommandSet.has("speaker_play_mode_set");
+  const pendingVolumeSet = pendingCommandSet.has("speaker_play_volume_set");
 
   const handleAudioPlayStart = () => {
     sendCommand("speaker_audio_play_start", {
@@ -880,6 +1090,62 @@ function App() {
 
         <section className="panel">
           <SectionHeader title="Speaker Control" subtitle="Commands" />
+          <div className="mt-5 space-y-3">
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-steel-700/45 bg-coal-900/50 px-4 py-3 text-sm text-steel-300">
+              {pendingTotal > 0 ? (
+                <>
+                  <InlineSpinner className="h-4 w-4 text-amber-400" />
+                  <span>
+                    {pendingTotal} command{pendingTotal > 1 ? "s" : ""} waiting
+                    for services_reply
+                  </span>
+                </>
+              ) : (
+                <span className="text-signal-400">No pending commands</span>
+              )}
+            </div>
+
+            {commandFeedbacks.length > 0 && (
+              <div className="space-y-2">
+                {commandFeedbacks.map((feedback) => (
+                  <div
+                    key={feedback.id}
+                    className={`flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3 text-sm shadow-panel transition ${
+                      feedback.status === "success"
+                        ? "border-signal-500/50 bg-signal-500/10 text-signal-400"
+                        : feedback.status === "timeout"
+                          ? "border-amber-500/55 bg-amber-500/10 text-amber-400"
+                          : "border-warn-500/50 bg-warn-500/10 text-warn-500"
+                    }`}
+                  >
+                    <span className="font-medium">
+                      {feedback.status === "success"
+                        ? "✅ Success"
+                        : feedback.status === "timeout"
+                          ? "⏱️ Timeout"
+                          : "❌ Failure"}
+                    </span>
+                    <span className="text-steel-300">
+                      {COMMAND_METHOD_LABELS[feedback.method]}
+                    </span>
+                    <span className="chip border-current/40 bg-transparent font-mono text-[11px] text-current">
+                      tid {formatShortTid(feedback.tid)}
+                    </span>
+                    <span className="text-steel-300">
+                      result {feedback.result ?? "N/A"}
+                    </span>
+                    <button
+                      className="btn ml-auto h-8 px-3 text-xs"
+                      onClick={() => removeFeedback(feedback.id)}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="mt-6 grid gap-4 lg:grid-cols-2">
             <div className="rounded-xl border border-steel-700/40 bg-coal-900/60 p-4">
               <div className="flex items-center justify-between gap-3">
@@ -912,9 +1178,17 @@ function App() {
                 <button
                   className="btn btn-primary"
                   onClick={handleAudioPlayStart}
-                  disabled={!canSend || !audioValid}
+                  disabled={!canSend || !audioValid || pendingAudioPlayStart}
+                  aria-busy={pendingAudioPlayStart}
                 >
-                  Send Audio Play Start
+                  {pendingAudioPlayStart ? (
+                    <>
+                      <InlineSpinner />
+                      Waiting Reply...
+                    </>
+                  ) : (
+                    "Send Audio Play Start"
+                  )}
                 </button>
               </div>
             </div>
@@ -945,9 +1219,17 @@ function App() {
                 <button
                   className="btn btn-primary"
                   onClick={handleTtsPlayStart}
-                  disabled={!canSend || !ttsValid}
+                  disabled={!canSend || !ttsValid || pendingTtsPlayStart}
+                  aria-busy={pendingTtsPlayStart}
                 >
-                  Send TTS Play Start
+                  {pendingTtsPlayStart ? (
+                    <>
+                      <InlineSpinner />
+                      Waiting Reply...
+                    </>
+                  ) : (
+                    "Send TTS Play Start"
+                  )}
                 </button>
               </div>
             </div>
@@ -960,16 +1242,32 @@ function App() {
                 <button
                   className="btn"
                   onClick={handleReplay}
-                  disabled={!canSend}
+                  disabled={!canSend || pendingReplay}
+                  aria-busy={pendingReplay}
                 >
-                  Replay
+                  {pendingReplay ? (
+                    <>
+                      <InlineSpinner />
+                      Replaying...
+                    </>
+                  ) : (
+                    "Replay"
+                  )}
                 </button>
                 <button
                   className="btn btn-danger"
                   onClick={handleStop}
-                  disabled={!canSend}
+                  disabled={!canSend || pendingStop}
+                  aria-busy={pendingStop}
                 >
-                  Stop
+                  {pendingStop ? (
+                    <>
+                      <InlineSpinner />
+                      Stopping...
+                    </>
+                  ) : (
+                    "Stop"
+                  )}
                 </button>
               </div>
             </div>
@@ -999,9 +1297,17 @@ function App() {
                   <button
                     className="btn"
                     onClick={handlePlayModeSet}
-                    disabled={!canSend}
+                    disabled={!canSend || pendingPlayModeSet}
+                    aria-busy={pendingPlayModeSet}
                   >
-                    Apply Mode
+                    {pendingPlayModeSet ? (
+                      <>
+                        <InlineSpinner />
+                        Applying...
+                      </>
+                    ) : (
+                      "Apply Mode"
+                    )}
                   </button>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
@@ -1028,9 +1334,17 @@ function App() {
                   <button
                     className="btn"
                     onClick={handleVolumeSet}
-                    disabled={!canSend}
+                    disabled={!canSend || pendingVolumeSet}
+                    aria-busy={pendingVolumeSet}
                   >
-                    Apply Volume
+                    {pendingVolumeSet ? (
+                      <>
+                        <InlineSpinner />
+                        Applying...
+                      </>
+                    ) : (
+                      "Apply Volume"
+                    )}
                   </button>
                 </div>
               </div>
@@ -1105,16 +1419,11 @@ function App() {
                               {entry.method}
                             </td>
                             <td className="px-4 py-3">
-                              <span
-                                className={`chip ${
-                                  entry.status === "success"
-                                    ? "border-signal-500/70 text-signal-400"
-                                    : entry.status === "failure"
-                                      ? "border-warn-500/70 text-warn-500"
-                                      : "border-amber-500/70 text-amber-400"
-                                }`}
-                              >
-                                {entry.status}
+                              <span className={`chip ${commandStatusTone[entry.status]}`}>
+                                {entry.status === "pending" && (
+                                  <InlineSpinner className="h-3 w-3" />
+                                )}
+                                {entry.status === "timeout" ? "timeout (10s)" : entry.status}
                               </span>
                             </td>
                             <td className="px-4 py-3 text-steel-300">

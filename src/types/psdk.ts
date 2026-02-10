@@ -55,7 +55,7 @@ export type SpeakerCommandMethod =
   | 'speaker_play_mode_set'
   | 'speaker_play_volume_set'
 
-export type CommandStatus = 'pending' | 'success' | 'failure'
+export type CommandStatus = 'pending' | 'success' | 'failure' | 'timeout'
 
 export interface CommandLogEntry {
   bid?: string
