@@ -634,6 +634,11 @@ function App() {
 
   const sendCommand = useCallback(
     (method: SpeakerCommandMethod, data: Record<string, unknown>) => {
+      if (onlineState !== "online") {
+        window.alert("PSDK 不在线，请确认设备在线后再下发指令。");
+        return;
+      }
+
       if (!isConnected) {
         window.alert("MQTT 未连接，请先连接后再下发指令。");
         return;
@@ -671,7 +676,7 @@ function App() {
       });
       publish(servicesTopic, payload);
     },
-    [isConnected, markCommandTimeout, publish, servicesTopic],
+    [isConnected, markCommandTimeout, onlineState, publish, servicesTopic],
   );
 
   const pendingCommandSet = useMemo(() => {
