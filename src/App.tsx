@@ -304,12 +304,20 @@ function App() {
     deviceSn.trim().length > 0
 
   const connectionCollapsed = status === 'connected'
-
-  const canSend = isConnected && servicesTopic.length > 0
+  const canSend = isConnected
 
   const sendCommand = useCallback(
     (method: SpeakerCommandMethod, data: Record<string, unknown>) => {
-      if (!canSend) return
+      if (!isConnected) {
+        window.alert('MQTT 未连接，请先连接后再下发指令。')
+        return
+      }
+
+      if (!servicesTopic) {
+        window.alert('缺少 Gateway SN，无法下发指令。')
+        return
+      }
+
       const message = buildBaseMessage(method, data)
       const payload = JSON.stringify(message)
       setCommandLogs((prev) => {
@@ -323,7 +331,7 @@ function App() {
       })
       publish(servicesTopic, payload)
     },
-    [canSend, publish, servicesTopic]
+    [isConnected, publish, servicesTopic]
   )
 
   const handleAudioPlayStart = () => {
