@@ -10,6 +10,7 @@ import type {
   CommandLogEntry,
   CommandStatus,
   FloatingWindowData,
+  PsdkCommandMethod,
   PsdkStatePayload,
   ServiceReplyData,
   SpeakerCommandMethod,
@@ -44,6 +45,12 @@ const SPEAKER_METHODS: SpeakerCommandMethod[] = [
   "speaker_play_volume_set",
 ];
 
+const COMMAND_METHODS: PsdkCommandMethod[] = [
+  ...SPEAKER_METHODS,
+  "psdk_input_box_text_set",
+  "psdk_widget_value_set",
+];
+
 const SPEAKER_PROGRESS_METHODS: SpeakerProgressMethod[] = [
   "speaker_audio_play_start_progress",
   "speaker_tts_play_start_progress",
@@ -57,8 +64,8 @@ const PROGRESS_TO_COMMAND_METHOD: Record<
   speaker_tts_play_start_progress: "speaker_tts_play_start",
 };
 
-const isSpeakerMethod = (value: string): value is SpeakerCommandMethod =>
-  SPEAKER_METHODS.includes(value as SpeakerCommandMethod);
+const isCommandMethod = (value: string): value is PsdkCommandMethod =>
+  COMMAND_METHODS.includes(value as PsdkCommandMethod);
 
 const isSpeakerProgressMethod = (
   value: string,
@@ -155,13 +162,15 @@ const commandStatusTone: Record<CommandStatus, string> = {
   timeout: "border-warn-500/70 text-warn-500",
 };
 
-const COMMAND_METHOD_LABELS: Record<SpeakerCommandMethod, string> = {
+const COMMAND_METHOD_LABELS: Record<PsdkCommandMethod, string> = {
   speaker_audio_play_start: "Audio Play Start",
   speaker_tts_play_start: "TTS Play Start",
   speaker_replay: "Replay",
   speaker_play_stop: "Stop",
   speaker_play_mode_set: "Play Mode Set",
   speaker_play_volume_set: "Play Volume Set",
+  psdk_input_box_text_set: "Input Box Text Set",
+  psdk_widget_value_set: "Widget Value Set",
 };
 
 const COMMAND_FEEDBACK_TTL_MS = 6000;
@@ -173,20 +182,20 @@ type CommandFeedbackStatus = Exclude<CommandStatus, "pending">;
 interface CommandFeedback {
   id: string;
   tid: string;
-  method: SpeakerCommandMethod;
+  method: PsdkCommandMethod;
   status: CommandFeedbackStatus;
   result?: number;
   createdAt: number;
 }
 
 interface PendingCommand {
-  method: SpeakerCommandMethod;
+  method: PsdkCommandMethod;
   sentAt: number;
 }
 
 interface TimeoutMeta {
   tid: string;
-  method: SpeakerCommandMethod;
+  method: PsdkCommandMethod;
 }
 
 const formatShortTid = (tid: string) => {
@@ -226,6 +235,9 @@ function App() {
   const [ttsName, setTtsName] = useState("");
   const [ttsText, setTtsText] = useState("");
   const [ttsMd5, setTtsMd5] = useState("");
+  const [inputBoxText, setInputBoxText] = useState("");
+  const [widgetIndex, setWidgetIndex] = useState(0);
+  const [widgetValue, setWidgetValue] = useState(0);
   const [playMode, setPlayMode] = useState<0 | 1>(0);
   const [playVolume, setPlayVolume] = useState(20);
 
@@ -371,7 +383,7 @@ function App() {
   const updateLogFromReply = useCallback(
     (
       ids: { tid?: string; bid?: string },
-      method: SpeakerCommandMethod,
+      method: PsdkCommandMethod,
       result: number,
       ts?: number,
     ) => {
@@ -521,7 +533,7 @@ function App() {
           ? pendingCommandsRef.current.get(record.tid)?.method
           : undefined;
         const replyMethod =
-          record.method && isSpeakerMethod(record.method)
+          record.method && isCommandMethod(record.method)
             ? record.method
             : methodFromTid;
         if (
@@ -633,7 +645,7 @@ function App() {
   const canSend = isConnected;
 
   const sendCommand = useCallback(
-    (method: SpeakerCommandMethod, data: Record<string, unknown>) => {
+    (method: PsdkCommandMethod, data: Record<string, unknown>) => {
       if (onlineState !== "online") {
         window.alert("PSDK 不在线，请确认设备在线后再下发指令。");
         return;
@@ -680,7 +692,7 @@ function App() {
   );
 
   const pendingCommandSet = useMemo(() => {
-    const next = new Set<SpeakerCommandMethod>();
+    const next = new Set<PsdkCommandMethod>();
     commandLogs.forEach((entry) => {
       if (entry.status === "pending") {
         next.add(entry.method);
@@ -699,6 +711,8 @@ function App() {
   const pendingStop = pendingCommandSet.has("speaker_play_stop");
   const pendingPlayModeSet = pendingCommandSet.has("speaker_play_mode_set");
   const pendingVolumeSet = pendingCommandSet.has("speaker_play_volume_set");
+  const pendingInputBoxTextSet = pendingCommandSet.has("psdk_input_box_text_set");
+  const pendingWidgetValueSet = pendingCommandSet.has("psdk_widget_value_set");
 
   const handleAudioPlayStart = () => {
     sendCommand("speaker_audio_play_start", {
@@ -751,6 +765,21 @@ function App() {
     });
   };
 
+  const handleInputBoxTextSet = () => {
+    sendCommand("psdk_input_box_text_set", {
+      psdk_index: psdkIndex,
+      value: inputBoxText,
+    });
+  };
+
+  const handleWidgetValueSet = () => {
+    sendCommand("psdk_widget_value_set", {
+      psdk_index: psdkIndex,
+      index: widgetIndex,
+      value: widgetValue,
+    });
+  };
+
   const audioValid =
     audioName.trim().length > 0 &&
     audioUrl.trim().length > 0 &&
@@ -760,6 +789,15 @@ function App() {
     ttsName.trim().length > 0 &&
     ttsText.trim().length > 0 &&
     ttsMd5.trim().length > 0;
+
+  const inputBoxTextBytes = useMemo(
+    () => new TextEncoder().encode(inputBoxText).length,
+    [inputBoxText],
+  );
+  const inputBoxTextValid =
+    inputBoxText.trim().length > 0 && inputBoxTextBytes <= 128;
+  const widgetIndexValid = Number.isInteger(widgetIndex) && widgetIndex >= 0;
+  const widgetValueValid = Number.isInteger(widgetValue);
 
   return (
     <div className="min-h-screen">
@@ -1352,6 +1390,91 @@ function App() {
                     )}
                   </button>
                 </div>
+              </div>
+            </div>
+
+            <div className="flex h-full flex-col rounded-xl border border-steel-700/40 bg-coal-900/60 p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-steel-400">
+                Input Box Text Set
+              </p>
+              <div className="mt-3 grid flex-1 gap-3">
+                <textarea
+                  className="textarea h-24"
+                  value={inputBoxText}
+                  maxLength={128}
+                  onChange={(event) => setInputBoxText(event.target.value)}
+                  placeholder="Input box content (max 128 bytes/chars)"
+                />
+                <p className="text-xs text-steel-400">
+                  Bytes: {inputBoxTextBytes}/128
+                </p>
+                <button
+                  className="btn mt-auto"
+                  onClick={handleInputBoxTextSet}
+                  disabled={!canSend || !inputBoxTextValid || pendingInputBoxTextSet}
+                  aria-busy={pendingInputBoxTextSet}
+                >
+                  {pendingInputBoxTextSet ? (
+                    <>
+                      <InlineSpinner />
+                      Applying...
+                    </>
+                  ) : (
+                    "Set Input Box Text"
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex h-full flex-col rounded-xl border border-steel-700/40 bg-coal-900/60 p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-steel-400">
+                Widget Value Set
+              </p>
+              <div className="mt-3 grid flex-1 gap-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="label m-0">Widget Index</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={widgetIndex}
+                    onChange={(event) =>
+                      setWidgetIndex(Number(event.target.value))
+                    }
+                    className="input w-24"
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="label m-0">Widget Value</label>
+                  <input
+                    type="number"
+                    value={widgetValue}
+                    onChange={(event) =>
+                      setWidgetValue(Number(event.target.value))
+                    }
+                    className="input w-24"
+                  />
+                </div>
+                <button
+                  className="btn mt-auto"
+                  onClick={handleWidgetValueSet}
+                  disabled={
+                    !canSend ||
+                    !widgetIndexValid ||
+                    !widgetValueValid ||
+                    pendingWidgetValueSet
+                  }
+                  aria-busy={pendingWidgetValueSet}
+                >
+                  {pendingWidgetValueSet ? (
+                    <>
+                      <InlineSpinner />
+                      Applying...
+                    </>
+                  ) : (
+                    "Set Widget Value"
+                  )}
+                </button>
               </div>
             </div>
           </div>

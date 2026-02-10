@@ -55,12 +55,17 @@ export type SpeakerCommandMethod =
   | 'speaker_play_mode_set'
   | 'speaker_play_volume_set'
 
+export type PsdkCommandMethod =
+  | SpeakerCommandMethod
+  | 'psdk_input_box_text_set'
+  | 'psdk_widget_value_set'
+
 export type CommandStatus = 'pending' | 'success' | 'failure' | 'timeout'
 
 export interface CommandLogEntry {
   bid?: string
   tid: string
-  method: SpeakerCommandMethod
+  method: PsdkCommandMethod
   sentAt: number
   status: CommandStatus
   result?: number
