@@ -62,6 +62,17 @@ export type PsdkCommandMethod =
 
 export type CommandStatus = 'pending' | 'success' | 'failure' | 'timeout'
 
+export type CommandFeedbackStatus = Exclude<CommandStatus, 'pending'>
+
+export interface CommandFeedback {
+  id: string
+  tid: string
+  method: PsdkCommandMethod
+  status: CommandFeedbackStatus
+  result?: number
+  createdAt: number
+}
+
 export interface CommandLogEntry {
   bid?: string
   tid: string
