@@ -133,6 +133,7 @@ function App() {
   const [psdkState, setPsdkState] = useState<PsdkStatePayload | null>(null)
   const [psdkStateAt, setPsdkStateAt] = useState<number | null>(null)
   const [commandLogs, setCommandLogs] = useState<CommandLogEntry[]>([])
+  const [logModalOpen, setLogModalOpen] = useState(false)
   const [now, setNow] = useState(() => Date.now())
 
   const clientId = useMemo(() => `psdk-debug-${createId()}`, [])
@@ -273,6 +274,17 @@ function App() {
       topics.forEach(unsubscribe)
     }
   }, [eventsTopic, isConnected, servicesReplyTopic, stateTopic, subscribe, unsubscribe])
+
+  useEffect(() => {
+    if (!logModalOpen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setLogModalOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [logModalOpen])
 
   const lastFloatingAt = floatingWindow?.timestamp ?? null
   const onlineState = lastFloatingAt
@@ -831,65 +843,96 @@ function App() {
         </section>
 
         <section className="panel">
-          <SectionHeader title="Command Results" subtitle="services_reply" />
-          <div className="mt-6 overflow-hidden rounded-xl border border-steel-700/40">
-            <div className="max-h-80 overflow-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-coal-900/70 text-steel-400">
-                  <tr>
-                    <th className="px-4 py-3">Time</th>
-                    <th className="px-4 py-3">Method</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Result</th>
-                    <th className="px-4 py-3">TID</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-steel-700/30">
-                  {commandLogs.length === 0 ? (
-                    <tr>
-                      <td
-                        className="px-4 py-6 text-center text-sm text-steel-400"
-                        colSpan={5}
-                      >
-                        No commands sent yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    commandLogs.map((entry) => (
-                      <tr key={entry.tid}>
-                        <td className="px-4 py-3 text-steel-300">
-                          {formatTimestamp(entry.sentAt)}
-                        </td>
-                        <td className="px-4 py-3 text-steel-100">
-                          {entry.method}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={`chip ${
-                              entry.status === 'success'
-                                ? 'border-signal-500/70 text-signal-400'
-                                : entry.status === 'failure'
-                                ? 'border-warn-500/70 text-warn-500'
-                                : 'border-amber-500/70 text-amber-400'
-                            }`}
-                          >
-                            {entry.status}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-steel-300">
-                          {entry.result ?? 'N/A'}
-                        </td>
-                        <td className="px-4 py-3 font-mono text-[11px] text-steel-500">
-                          {entry.tid}
-                        </td>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <SectionHeader title="Command Results" subtitle="services_reply" />
+            <button
+              className="btn"
+              onClick={() => setLogModalOpen(true)}
+            >
+              Log ({commandLogs.length})
+            </button>
+          </div>
+          <p className="mt-6 text-sm text-steel-400">
+            Click Log to view command history in a modal.
+          </p>
+        </section>
+
+        {logModalOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-coal-950/75 px-4 py-6"
+            onClick={() => setLogModalOpen(false)}
+          >
+            <div
+              className="panel w-full max-w-6xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <SectionHeader title="Command Results" subtitle="services_reply" />
+                <button className="btn btn-danger" onClick={() => setLogModalOpen(false)}>
+                  Close
+                </button>
+              </div>
+
+              <div className="mt-6 overflow-hidden rounded-xl border border-steel-700/40">
+                <div className="max-h-[70vh] overflow-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-coal-900/70 text-steel-400">
+                      <tr>
+                        <th className="px-4 py-3">Time</th>
+                        <th className="px-4 py-3">Method</th>
+                        <th className="px-4 py-3">Status</th>
+                        <th className="px-4 py-3">Result</th>
+                        <th className="px-4 py-3">TID</th>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    </thead>
+                    <tbody className="divide-y divide-steel-700/30">
+                      {commandLogs.length === 0 ? (
+                        <tr>
+                          <td
+                            className="px-4 py-6 text-center text-sm text-steel-400"
+                            colSpan={5}
+                          >
+                            No commands sent yet.
+                          </td>
+                        </tr>
+                      ) : (
+                        commandLogs.map((entry) => (
+                          <tr key={entry.tid}>
+                            <td className="px-4 py-3 text-steel-300">
+                              {formatTimestamp(entry.sentAt)}
+                            </td>
+                            <td className="px-4 py-3 text-steel-100">
+                              {entry.method}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span
+                                className={`chip ${
+                                  entry.status === 'success'
+                                    ? 'border-signal-500/70 text-signal-400'
+                                    : entry.status === 'failure'
+                                    ? 'border-warn-500/70 text-warn-500'
+                                    : 'border-amber-500/70 text-amber-400'
+                                }`}
+                              >
+                                {entry.status}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-steel-300">
+                              {entry.result ?? 'N/A'}
+                            </td>
+                            <td className="px-4 py-3 font-mono text-[11px] text-steel-500">
+                              {entry.tid}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </div>
-        </section>
+        )}
       </div>
     </div>
   )
