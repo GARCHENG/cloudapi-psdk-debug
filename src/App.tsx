@@ -5,11 +5,14 @@ import { useMqtt } from './hooks/useMqtt'
 import type { MqttStatus } from './hooks/useMqtt'
 import { buildBaseMessage } from './types/psdk'
 import type {
+  CommandPlayProgress,
   CommandLogEntry,
   FloatingWindowData,
   PsdkStatePayload,
   ServiceReplyData,
-  SpeakerCommandMethod
+  SpeakerCommandMethod,
+  SpeakerPlayProgressData,
+  SpeakerProgressMethod
 } from './types/psdk'
 import {
   buildEventsTopic,
@@ -35,8 +38,42 @@ const SPEAKER_METHODS: SpeakerCommandMethod[] = [
   'speaker_play_volume_set'
 ]
 
+const SPEAKER_PROGRESS_METHODS: SpeakerProgressMethod[] = [
+  'speaker_audio_play_start_progress',
+  'speaker_tts_play_start_progress'
+]
+
+const PROGRESS_TO_COMMAND_METHOD: Record<
+  SpeakerProgressMethod,
+  SpeakerCommandMethod
+> = {
+  speaker_audio_play_start_progress: 'speaker_audio_play_start',
+  speaker_tts_play_start_progress: 'speaker_tts_play_start'
+}
+
 const isSpeakerMethod = (value: string): value is SpeakerCommandMethod =>
   SPEAKER_METHODS.includes(value as SpeakerCommandMethod)
+
+const isSpeakerProgressMethod = (value: string): value is SpeakerProgressMethod =>
+  SPEAKER_PROGRESS_METHODS.includes(value as SpeakerProgressMethod)
+
+const formatProgressLabel = (playProgress?: CommandPlayProgress) => {
+  if (!playProgress) return 'N/A'
+
+  const parts: string[] = []
+  if (typeof playProgress.percent === 'number') {
+    parts.push(`${playProgress.percent}%`)
+  }
+  if (playProgress.stepKey) {
+    parts.push(playProgress.stepKey)
+  }
+  if (playProgress.status) {
+    parts.push(playProgress.status)
+  }
+
+  if (parts.length === 0) return 'Received'
+  return parts.join(' · ')
+}
 
 const formatTimestamp = (value?: number | null) => {
   if (!value) return 'N/A'
@@ -168,12 +205,26 @@ function App() {
   )
 
   const updateLogFromReply = useCallback(
-    (tid: string, method: SpeakerCommandMethod, result: number, ts?: number) => {
+    (
+      ids: { tid?: string; bid?: string },
+      method: SpeakerCommandMethod,
+      result: number,
+      ts?: number
+    ) => {
       setCommandLogs((prev) => {
         const nextStatus = result === 0 ? 'success' : 'failure'
-        const idx = prev.findIndex((entry) => entry.tid === tid)
+        const idx = prev.findIndex(
+          (entry) =>
+            (ids.tid && entry.tid === ids.tid) ||
+            (ids.bid && entry.bid === ids.bid)
+        )
+
+        const tid = ids.tid
         if (idx === -1) {
+          if (!tid) return prev
+
           const entry: CommandLogEntry = {
+            bid: ids.bid,
             tid,
             method,
             sentAt: ts ?? Date.now(),
@@ -184,6 +235,54 @@ function App() {
         }
         const updated = [...prev]
         updated[idx] = { ...updated[idx], status: nextStatus, result }
+        return updated
+      })
+    },
+    []
+  )
+
+  const updateLogFromProgress = useCallback(
+    (
+      ids: { tid?: string; bid?: string },
+      method: SpeakerProgressMethod,
+      data: SpeakerPlayProgressData,
+      ts?: number
+    ) => {
+      setCommandLogs((prev) => {
+        const idx = prev.findIndex((entry) => {
+          const idMatched =
+            (ids.tid && entry.tid === ids.tid) ||
+            (ids.bid && entry.bid === ids.bid)
+          if (!idMatched) return false
+
+          const expectedMethod = PROGRESS_TO_COMMAND_METHOD[method]
+          return entry.method === expectedMethod
+        })
+        if (idx === -1) return prev
+
+        const percent =
+          typeof data.output?.progress?.percent === 'number'
+            ? data.output.progress.percent
+            : undefined
+        const stepKey =
+          typeof data.output?.progress?.step_key === 'string'
+            ? data.output.progress.step_key
+            : undefined
+        const status =
+          typeof data.output?.status === 'string' ? data.output.status : undefined
+
+        const updated = [...prev]
+        updated[idx] = {
+          ...updated[idx],
+          playProgress: {
+            method,
+            percent,
+            stepKey,
+            status,
+            updatedAt: ts ?? Date.now()
+          }
+        }
+
         return updated
       })
     },
@@ -203,6 +302,7 @@ function App() {
       const record = payload as {
         method?: string
         data?: unknown
+        bid?: string
         tid?: string
         timestamp?: number
       }
@@ -236,20 +336,48 @@ function App() {
         if (
           data &&
           typeof data.result === 'number' &&
-          record.tid &&
           record.method &&
           isSpeakerMethod(record.method)
         ) {
           updateLogFromReply(
-            record.tid,
+            {
+              tid: record.tid,
+              bid: record.bid
+            },
             record.method,
             data.result,
             record.timestamp
           )
         }
       }
+
+      if (
+        eventsTopic &&
+        topic === eventsTopic &&
+        record.method &&
+        isSpeakerProgressMethod(record.method)
+      ) {
+        const data = record.data as SpeakerPlayProgressData | undefined
+        if (data && (record.tid || record.bid)) {
+          updateLogFromProgress(
+            {
+              tid: record.tid,
+              bid: record.bid
+            },
+            record.method,
+            data,
+            record.timestamp
+          )
+        }
+      }
     },
-    [servicesReplyTopic, stateTopic, updateLogFromReply]
+    [
+      eventsTopic,
+      servicesReplyTopic,
+      stateTopic,
+      updateLogFromProgress,
+      updateLogFromReply
+    ]
   )
 
   const { isConnected, status, error, subscribe, unsubscribe, publish } = useMqtt({
@@ -322,6 +450,7 @@ function App() {
       const payload = JSON.stringify(message)
       setCommandLogs((prev) => {
         const entry: CommandLogEntry = {
+          bid: message.bid,
           tid: message.tid,
           method,
           sentAt: message.timestamp,
@@ -889,6 +1018,7 @@ function App() {
                         <th className="px-4 py-3">Time</th>
                         <th className="px-4 py-3">Method</th>
                         <th className="px-4 py-3">Status</th>
+                        <th className="px-4 py-3">Play Progress</th>
                         <th className="px-4 py-3">Result</th>
                         <th className="px-4 py-3">TID</th>
                       </tr>
@@ -898,7 +1028,7 @@ function App() {
                         <tr>
                           <td
                             className="px-4 py-6 text-center text-sm text-steel-400"
-                            colSpan={5}
+                            colSpan={6}
                           >
                             No commands sent yet.
                           </td>
@@ -924,6 +1054,9 @@ function App() {
                               >
                                 {entry.status}
                               </span>
+                            </td>
+                            <td className="px-4 py-3 text-steel-300">
+                              {formatProgressLabel(entry.playProgress)}
                             </td>
                             <td className="px-4 py-3 text-steel-300">
                               {entry.result ?? 'N/A'}

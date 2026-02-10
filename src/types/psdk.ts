@@ -18,6 +18,35 @@ export interface ServiceReplyData {
   result: number
 }
 
+export type SpeakerProgressMethod =
+  | 'speaker_audio_play_start_progress'
+  | 'speaker_tts_play_start_progress'
+
+export interface SpeakerPlayProgressDetail {
+  percent?: number
+  step_key?: string
+}
+
+export interface SpeakerPlayProgressOutput {
+  md5?: string
+  progress?: SpeakerPlayProgressDetail
+  psdk_index?: number
+  status?: string
+}
+
+export interface SpeakerPlayProgressData {
+  output?: SpeakerPlayProgressOutput
+  result?: number
+}
+
+export interface CommandPlayProgress {
+  method: SpeakerProgressMethod
+  percent?: number
+  status?: string
+  stepKey?: string
+  updatedAt: number
+}
+
 export type SpeakerCommandMethod =
   | 'speaker_audio_play_start'
   | 'speaker_tts_play_start'
@@ -29,11 +58,13 @@ export type SpeakerCommandMethod =
 export type CommandStatus = 'pending' | 'success' | 'failure'
 
 export interface CommandLogEntry {
+  bid?: string
   tid: string
   method: SpeakerCommandMethod
   sentAt: number
   status: CommandStatus
   result?: number
+  playProgress?: CommandPlayProgress
 }
 
 export interface SpeakerFile {
