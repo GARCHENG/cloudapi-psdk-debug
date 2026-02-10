@@ -33,8 +33,10 @@ const MAX_LOGS = 50;
 const DEFAULT_PSDK_INDEX = 2;
 const DEFAULT_AUDIO_PLAY_NAME =
   import.meta.env.VITE_AUDIO_PLAY_DEFAULT_NAME ?? "";
-const DEFAULT_AUDIO_PLAY_URL = import.meta.env.VITE_AUDIO_PLAY_DEFAULT_URL ?? "";
-const DEFAULT_AUDIO_PLAY_MD5 = import.meta.env.VITE_AUDIO_PLAY_DEFAULT_MD5 ?? "";
+const DEFAULT_AUDIO_PLAY_URL =
+  import.meta.env.VITE_AUDIO_PLAY_DEFAULT_URL ?? "";
+const DEFAULT_AUDIO_PLAY_MD5 =
+  import.meta.env.VITE_AUDIO_PLAY_DEFAULT_MD5 ?? "";
 
 const SPEAKER_METHODS: SpeakerCommandMethod[] = [
   "speaker_audio_play_start",
@@ -249,7 +251,9 @@ function App() {
   const [psdkState, setPsdkState] = useState<PsdkStatePayload | null>(null);
   const [psdkStateAt, setPsdkStateAt] = useState<number | null>(null);
   const [commandLogs, setCommandLogs] = useState<CommandLogEntry[]>([]);
-  const [commandFeedbacks, setCommandFeedbacks] = useState<CommandFeedback[]>([]);
+  const [commandFeedbacks, setCommandFeedbacks] = useState<CommandFeedback[]>(
+    [],
+  );
   const [logModalOpen, setLogModalOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const pendingCommandsRef = useRef<Map<string, PendingCommand>>(new Map());
@@ -313,9 +317,7 @@ function App() {
   );
 
   const pushFeedback = useCallback(
-    (
-      params: Pick<CommandFeedback, "tid" | "method" | "status" | "result">,
-    ) => {
+    (params: Pick<CommandFeedback, "tid" | "method" | "status" | "result">) => {
       const id = createId();
       const next: CommandFeedback = {
         ...params,
@@ -401,8 +403,7 @@ function App() {
       setCommandLogs((prev) => {
         const idx = prev.findIndex(
           (entry) =>
-            (tid && entry.tid === tid) ||
-            (ids.bid && entry.bid === ids.bid),
+            (tid && entry.tid === tid) || (ids.bid && entry.bid === ids.bid),
         );
 
         if (idx === -1) {
@@ -536,11 +537,7 @@ function App() {
           record.method && isCommandMethod(record.method)
             ? record.method
             : methodFromTid;
-        if (
-          data &&
-          typeof data.result === "number" &&
-          replyMethod
-        ) {
+        if (data && typeof data.result === "number" && replyMethod) {
           updateLogFromReply(
             {
               tid: record.tid,
@@ -705,13 +702,17 @@ function App() {
     () => commandLogs.filter((entry) => entry.status === "pending").length,
     [commandLogs],
   );
-  const pendingAudioPlayStart = pendingCommandSet.has("speaker_audio_play_start");
+  const pendingAudioPlayStart = pendingCommandSet.has(
+    "speaker_audio_play_start",
+  );
   const pendingTtsPlayStart = pendingCommandSet.has("speaker_tts_play_start");
   const pendingReplay = pendingCommandSet.has("speaker_replay");
   const pendingStop = pendingCommandSet.has("speaker_play_stop");
   const pendingPlayModeSet = pendingCommandSet.has("speaker_play_mode_set");
   const pendingVolumeSet = pendingCommandSet.has("speaker_play_volume_set");
-  const pendingInputBoxTextSet = pendingCommandSet.has("psdk_input_box_text_set");
+  const pendingInputBoxTextSet = pendingCommandSet.has(
+    "psdk_input_box_text_set",
+  );
   const pendingWidgetValueSet = pendingCommandSet.has("psdk_widget_value_set");
 
   const handleAudioPlayStart = () => {
@@ -1190,6 +1191,122 @@ function App() {
           </div>
 
           <div className="mt-6 grid gap-4 lg:grid-cols-2">
+            <div className="rounded-xl border border-steel-700/40 bg-coal-900/60 p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-steel-400">
+                Play Mode & Volume
+              </p>
+              <div className="mt-3 grid gap-4">
+                <div className="flex flex-wrap items-center gap-4 text-sm">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      checked={playMode === 0}
+                      onChange={() => setPlayMode(0)}
+                    />
+                    Single
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      checked={playMode === 1}
+                      onChange={() => setPlayMode(1)}
+                    />
+                    Loop
+                  </label>
+                  <button
+                    className="btn"
+                    onClick={handlePlayModeSet}
+                    disabled={!canSend || pendingPlayModeSet}
+                    aria-busy={pendingPlayModeSet}
+                  >
+                    {pendingPlayModeSet ? (
+                      <>
+                        <InlineSpinner />
+                        Applying...
+                      </>
+                    ) : (
+                      "Apply Mode"
+                    )}
+                  </button>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={playVolume}
+                    onChange={(event) =>
+                      setPlayVolume(Number(event.target.value))
+                    }
+                    className="flex-1"
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={playVolume}
+                    onChange={(event) =>
+                      setPlayVolume(Number(event.target.value))
+                    }
+                    className="input w-24"
+                  />
+                  <button
+                    className="btn"
+                    onClick={handleVolumeSet}
+                    disabled={!canSend || pendingVolumeSet}
+                    aria-busy={pendingVolumeSet}
+                  >
+                    {pendingVolumeSet ? (
+                      <>
+                        <InlineSpinner />
+                        Applying...
+                      </>
+                    ) : (
+                      "Apply Volume"
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-steel-700/40 bg-coal-900/60 p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-steel-400">
+                Playback Actions
+              </p>
+              <div className="mt-3 flex flex-wrap gap-3">
+                <button
+                  className="btn"
+                  onClick={handleReplay}
+                  disabled={!canSend || pendingReplay}
+                  aria-busy={pendingReplay}
+                >
+                  {pendingReplay ? (
+                    <>
+                      <InlineSpinner />
+                      Replaying...
+                    </>
+                  ) : (
+                    "Replay"
+                  )}
+                </button>
+                <button
+                  className="btn btn-danger"
+                  onClick={handleStop}
+                  disabled={!canSend || pendingStop}
+                  aria-busy={pendingStop}
+                >
+                  {pendingStop ? (
+                    <>
+                      <InlineSpinner />
+                      Stopping...
+                    </>
+                  ) : (
+                    "Stop"
+                  )}
+                </button>
+              </div>
+            </div>
+
             <div className="flex h-full flex-col rounded-xl border border-steel-700/40 bg-coal-900/60 p-4">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs uppercase tracking-[0.2em] text-steel-400">
@@ -1277,122 +1394,6 @@ function App() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-steel-700/40 bg-coal-900/60 p-4">
-              <p className="text-xs uppercase tracking-[0.2em] text-steel-400">
-                Playback Actions
-              </p>
-              <div className="mt-3 flex flex-wrap gap-3">
-                <button
-                  className="btn"
-                  onClick={handleReplay}
-                  disabled={!canSend || pendingReplay}
-                  aria-busy={pendingReplay}
-                >
-                  {pendingReplay ? (
-                    <>
-                      <InlineSpinner />
-                      Replaying...
-                    </>
-                  ) : (
-                    "Replay"
-                  )}
-                </button>
-                <button
-                  className="btn btn-danger"
-                  onClick={handleStop}
-                  disabled={!canSend || pendingStop}
-                  aria-busy={pendingStop}
-                >
-                  {pendingStop ? (
-                    <>
-                      <InlineSpinner />
-                      Stopping...
-                    </>
-                  ) : (
-                    "Stop"
-                  )}
-                </button>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-steel-700/40 bg-coal-900/60 p-4">
-              <p className="text-xs uppercase tracking-[0.2em] text-steel-400">
-                Play Mode & Volume
-              </p>
-              <div className="mt-3 grid gap-4">
-                <div className="flex flex-wrap items-center gap-4 text-sm">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      checked={playMode === 0}
-                      onChange={() => setPlayMode(0)}
-                    />
-                    Single
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      checked={playMode === 1}
-                      onChange={() => setPlayMode(1)}
-                    />
-                    Loop
-                  </label>
-                  <button
-                    className="btn"
-                    onClick={handlePlayModeSet}
-                    disabled={!canSend || pendingPlayModeSet}
-                    aria-busy={pendingPlayModeSet}
-                  >
-                    {pendingPlayModeSet ? (
-                      <>
-                        <InlineSpinner />
-                        Applying...
-                      </>
-                    ) : (
-                      "Apply Mode"
-                    )}
-                  </button>
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={playVolume}
-                    onChange={(event) =>
-                      setPlayVolume(Number(event.target.value))
-                    }
-                    className="flex-1"
-                  />
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={playVolume}
-                    onChange={(event) =>
-                      setPlayVolume(Number(event.target.value))
-                    }
-                    className="input w-24"
-                  />
-                  <button
-                    className="btn"
-                    onClick={handleVolumeSet}
-                    disabled={!canSend || pendingVolumeSet}
-                    aria-busy={pendingVolumeSet}
-                  >
-                    {pendingVolumeSet ? (
-                      <>
-                        <InlineSpinner />
-                        Applying...
-                      </>
-                    ) : (
-                      "Apply Volume"
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-
             <div className="flex h-full flex-col rounded-xl border border-steel-700/40 bg-coal-900/60 p-4">
               <p className="text-xs uppercase tracking-[0.2em] text-steel-400">
                 Input Box Text Set
@@ -1411,7 +1412,9 @@ function App() {
                 <button
                   className="btn mt-auto"
                   onClick={handleInputBoxTextSet}
-                  disabled={!canSend || !inputBoxTextValid || pendingInputBoxTextSet}
+                  disabled={
+                    !canSend || !inputBoxTextValid || pendingInputBoxTextSet
+                  }
                   aria-busy={pendingInputBoxTextSet}
                 >
                   {pendingInputBoxTextSet ? (
@@ -1547,11 +1550,15 @@ function App() {
                               {entry.method}
                             </td>
                             <td className="px-4 py-3">
-                              <span className={`chip ${commandStatusTone[entry.status]}`}>
+                              <span
+                                className={`chip ${commandStatusTone[entry.status]}`}
+                              >
                                 {entry.status === "pending" && (
                                   <InlineSpinner className="h-3 w-3" />
                                 )}
-                                {entry.status === "timeout" ? "timeout (10s)" : entry.status}
+                                {entry.status === "timeout"
+                                  ? "timeout (10s)"
+                                  : entry.status}
                               </span>
                             </td>
                             <td className="px-4 py-3 text-steel-300">
