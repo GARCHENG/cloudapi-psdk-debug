@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import mqtt from 'mqtt'
 import type { IClientOptions, MqttClient } from 'mqtt'
 
@@ -25,17 +25,28 @@ export const useMqtt = ({
   onStatus
 }: UseMqttProps) => {
   const [isConnected, setIsConnected] = useState(false)
-  const [status, setStatus] = useState<MqttStatus>('offline')
+  const [transportStatus, setTransportStatus] = useState<MqttStatus>('offline')
   const [error, setError] = useState<string | null>(null)
   const clientRef = useRef<MqttClient | null>(null)
 
-  const updateStatus = useCallback(
-    (next: MqttStatus) => {
-      setStatus(next)
-      onStatus?.(next)
-    },
-    [onStatus]
-  )
+  const status = useMemo<MqttStatus>(() => {
+    if (!enabled) return 'offline'
+    if (!brokerUrl) return 'error'
+    if (transportStatus === 'error') return 'error'
+    if (transportStatus === 'reconnecting') return 'reconnecting'
+    if (isConnected || transportStatus === 'connected') return 'connected'
+    return 'connecting'
+  }, [brokerUrl, enabled, isConnected, transportStatus])
+
+  const resolvedError = useMemo(() => {
+    if (!enabled) return null
+    if (!brokerUrl) return 'Missing broker URL'
+    return error
+  }, [brokerUrl, enabled, error])
+
+  useEffect(() => {
+    onStatus?.(status)
+  }, [onStatus, status])
 
   useEffect(() => {
     if (!enabled) {
@@ -43,47 +54,40 @@ export const useMqtt = ({
         clientRef.current.end(true)
         clientRef.current = null
       }
-      setIsConnected(false)
-      updateStatus('offline')
       return
     }
 
     if (!brokerUrl) {
-      setIsConnected(false)
-      setError('Missing broker URL')
-      updateStatus('error')
       return
     }
-
-    setError(null)
-    updateStatus('connecting')
 
     const client = mqtt.connect(brokerUrl, options)
     clientRef.current = client
 
     client.on('connect', () => {
       setIsConnected(true)
-      updateStatus('connected')
+      setError(null)
+      setTransportStatus('connected')
     })
 
     client.on('reconnect', () => {
-      updateStatus('reconnecting')
+      setTransportStatus('reconnecting')
     })
 
     client.on('offline', () => {
       setIsConnected(false)
-      updateStatus('offline')
+      setTransportStatus('offline')
     })
 
     client.on('close', () => {
       setIsConnected(false)
-      updateStatus('offline')
+      setTransportStatus('offline')
     })
 
     client.on('error', (err) => {
       setIsConnected(false)
       setError(err?.message ?? 'MQTT error')
-      updateStatus('error')
+      setTransportStatus('error')
     })
 
     client.on('message', (topic: string, message: Buffer) => {
@@ -94,7 +98,7 @@ export const useMqtt = ({
       client.end(true)
       clientRef.current = null
     }
-  }, [brokerUrl, enabled, onMessage, options, updateStatus])
+  }, [brokerUrl, enabled, onMessage, options])
 
   const subscribe = useCallback(
     (topic: string) => {
@@ -118,6 +122,8 @@ export const useMqtt = ({
 
   const connect = useCallback(() => {
     if (!clientRef.current) return
+    setError(null)
+    setTransportStatus('connecting')
     clientRef.current.reconnect()
   }, [])
 
@@ -126,13 +132,14 @@ export const useMqtt = ({
     clientRef.current.end(true)
     clientRef.current = null
     setIsConnected(false)
-    updateStatus('offline')
-  }, [updateStatus])
+    setError(null)
+    setTransportStatus('offline')
+  }, [])
 
   return {
     isConnected,
     status,
-    error,
+    error: resolvedError,
     connect,
     disconnect,
     subscribe,
