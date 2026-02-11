@@ -117,6 +117,7 @@ function App() {
   const [inputBoxText, setInputBoxText] = useState("");
   const [widgetIndex, setWidgetIndex] = useState(0);
   const [widgetValue, setWidgetValue] = useState(0);
+  const [widgetConfigSourceType, setWidgetConfigSourceType] = useState("");
   const [playMode, setPlayMode] = useState<0 | 1>(0);
   const [playVolume, setPlayVolume] = useState(20);
 
@@ -735,7 +736,10 @@ function App() {
 
         <div className="grid gap-6">
           <FloatingWindowPanel floatingWindow={floatingWindow} />
-          <PsdkStatePanel activeEntry={activeEntry} />
+          <PsdkStatePanel
+            activeEntry={activeEntry}
+            linkedSourceType={widgetConfigSourceType}
+          />
         </div>
 
         <SpeakerControlPanel
@@ -788,6 +792,8 @@ function App() {
           widgetValueValid={widgetValueValid}
           pendingWidgetValueSet={pendingWidgetValueSet}
           handleWidgetValueSet={handleWidgetValueSet}
+          widgetConfigSourceType={widgetConfigSourceType}
+          setWidgetConfigSourceType={setWidgetConfigSourceType}
         />
 
         <CommandResultsPanel

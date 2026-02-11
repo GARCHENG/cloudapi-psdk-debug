@@ -57,6 +57,8 @@ interface SpeakerControlPanelProps {
   widgetValueValid: boolean;
   pendingWidgetValueSet: boolean;
   handleWidgetValueSet: () => void;
+  widgetConfigSourceType: string;
+  setWidgetConfigSourceType: (value: string) => void;
 }
 
 export const SpeakerControlPanel = ({
@@ -109,6 +111,8 @@ export const SpeakerControlPanel = ({
   widgetValueValid,
   pendingWidgetValueSet,
   handleWidgetValueSet,
+  widgetConfigSourceType,
+  setWidgetConfigSourceType,
 }: SpeakerControlPanelProps) => {
   const [widgetExampleModalOpen, setWidgetExampleModalOpen] = useState(false)
   const [widgetExampleDeviceType, setWidgetExampleDeviceType] = useState('')
@@ -124,6 +128,7 @@ export const SpeakerControlPanel = ({
     setWidgetValue(value)
     setWidgetExampleDeviceType(deviceType)
     setWidgetExampleDescription(description)
+    setWidgetConfigSourceType(deviceType)
   }
 
   return (
@@ -446,6 +451,7 @@ export const SpeakerControlPanel = ({
                   setWidgetIndex(Number(event.target.value))
                   setWidgetExampleDeviceType('')
                   setWidgetExampleDescription('')
+                  setWidgetConfigSourceType('')
                 }}
                 className="input w-24"
               />
@@ -459,15 +465,16 @@ export const SpeakerControlPanel = ({
                   setWidgetValue(Number(event.target.value))
                   setWidgetExampleDeviceType('')
                   setWidgetExampleDescription('')
+                  setWidgetConfigSourceType('')
                 }}
                 className="input w-24"
               />
             </div>
             {widgetExampleDescription && (
               <p className='flex flex-wrap items-center gap-2 rounded-lg border border-signal-500/40 bg-signal-500/10 px-3 py-2 text-sm text-signal-400'>
-                {widgetExampleDeviceType && (
+                {(widgetExampleDeviceType || widgetConfigSourceType) && (
                   <span className='chip border-signal-500/45 bg-signal-500/15 text-[11px] uppercase text-signal-300'>
-                    {widgetExampleDeviceType}
+                    {widgetExampleDeviceType || widgetConfigSourceType}
                   </span>
                 )}
                 {widgetExampleDescription}
