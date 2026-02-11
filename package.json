@@ -4,9 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/generate-widget-config-registry.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/generate-widget-config-registry.mjs",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "prepreview": "node scripts/generate-widget-config-registry.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

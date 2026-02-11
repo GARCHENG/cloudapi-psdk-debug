@@ -7,7 +7,18 @@ import {
   parseWidgetConfigJson,
 } from '../../lib/widgetConfig'
 
-type WidgetSourceType = 't40s' | 'custom'
+type WidgetSourceType = 'custom' | string
+
+interface WidgetConfigRegistry {
+  devices: WidgetConfigRegistryEntry[]
+  generatedAt?: string
+}
+
+interface WidgetConfigRegistryEntry {
+  deviceType: string
+  fileName: string
+  url: string
+}
 
 interface WidgetValueExampleModalProps {
   open: boolean
@@ -21,7 +32,8 @@ export interface WidgetExamplePick {
   description: string
 }
 
-const BUILTIN_T40S_URL = '/widget-configs/t40s_widget_config.json'
+const REGISTRY_URL = '/widget-configs/registry.json'
+const CUSTOM_SOURCE_TYPE = 'custom'
 const DEFAULT_SCALE_VALUE = 50
 
 const getFileReaderError = (error: DOMException | null) =>
@@ -34,68 +46,171 @@ const getWidgetTypeBadgeTone = (widgetType: string) => {
   return 'border-sky-500/60 text-sky-300'
 }
 
+const buildFallbackRegistry = (): WidgetConfigRegistry => ({
+  devices: [
+    {
+      deviceType: 't40s',
+      fileName: 't40s_widget_config.json',
+      url: '/widget-configs/t40s_widget_config.json',
+    },
+  ],
+})
+
+const ensureUniqueDevices = (
+  entries: WidgetConfigRegistryEntry[],
+): WidgetConfigRegistryEntry[] => {
+  const mappedEntries = new Map<string, WidgetConfigRegistryEntry>()
+
+  for (const entry of entries) {
+    if (!entry.deviceType || !entry.url) {
+      continue
+    }
+
+    mappedEntries.set(entry.deviceType, entry)
+  }
+
+  return [...mappedEntries.values()].sort((left, right) =>
+    left.deviceType.localeCompare(right.deviceType),
+  )
+}
+
+const parseRegistry = (payload: unknown): WidgetConfigRegistry => {
+  if (!payload || typeof payload !== 'object') {
+    return buildFallbackRegistry()
+  }
+
+  const maybeRegistry = payload as {
+    devices?: unknown
+    generatedAt?: unknown
+  }
+
+  if (!Array.isArray(maybeRegistry.devices)) {
+    return buildFallbackRegistry()
+  }
+
+  const parsedEntries = maybeRegistry.devices
+    .map((entry): WidgetConfigRegistryEntry | null => {
+      if (!entry || typeof entry !== 'object') {
+        return null
+      }
+
+      const mappedEntry = entry as {
+        deviceType?: unknown
+        fileName?: unknown
+        url?: unknown
+      }
+
+      if (
+        typeof mappedEntry.deviceType !== 'string' ||
+        typeof mappedEntry.fileName !== 'string' ||
+        typeof mappedEntry.url !== 'string'
+      ) {
+        return null
+      }
+
+      return {
+        deviceType: mappedEntry.deviceType,
+        fileName: mappedEntry.fileName,
+        url: mappedEntry.url,
+      }
+    })
+    .filter((entry): entry is WidgetConfigRegistryEntry => entry !== null)
+
+  const devices = ensureUniqueDevices(parsedEntries)
+  if (devices.length === 0) {
+    return buildFallbackRegistry()
+  }
+
+  return {
+    devices,
+    generatedAt:
+      typeof maybeRegistry.generatedAt === 'string'
+        ? maybeRegistry.generatedAt
+        : undefined,
+  }
+}
+
+const findFirstBuiltinSource = (registry: WidgetConfigRegistry) => {
+  if (registry.devices.length === 0) {
+    return CUSTOM_SOURCE_TYPE
+  }
+
+  return registry.devices[0].deviceType
+}
+
 export const WidgetValueExampleModal = ({
   open,
   onClose,
   onPick,
 }: WidgetValueExampleModalProps) => {
+  const [registry, setRegistry] = useState<WidgetConfigRegistry>(buildFallbackRegistry)
+  const [registryLoading, setRegistryLoading] = useState(false)
+  const [registryError, setRegistryError] = useState<string | null>(null)
   const [sourceType, setSourceType] = useState<WidgetSourceType>('t40s')
-  const [builtinConfig, setBuiltinConfig] =
-    useState<NormalizedWidgetConfig | null>(null)
+  const [builtinConfigs, setBuiltinConfigs] = useState<
+    Record<string, NormalizedWidgetConfig>
+  >({})
+  const [loadingBuiltinType, setLoadingBuiltinType] = useState<string | null>(null)
+  const [builtinError, setBuiltinError] = useState<string | null>(null)
   const [customConfig, setCustomConfig] =
     useState<NormalizedWidgetConfig | null>(null)
   const [customFileName, setCustomFileName] = useState('')
-  const [loadingBuiltin, setLoadingBuiltin] = useState(false)
-  const [builtinError, setBuiltinError] = useState<string | null>(null)
   const [customError, setCustomError] = useState<string | null>(null)
   const [scaleValues, setScaleValues] = useState<Record<number, number>>({})
 
   useEffect(() => {
-    if (!open || sourceType !== 't40s' || builtinConfig) {
+    if (!open) {
       return
     }
 
     let cancelled = false
 
-    const loadBuiltinConfig = async () => {
-      setLoadingBuiltin(true)
-      setBuiltinError(null)
+    const loadRegistry = async () => {
+      setRegistryLoading(true)
+      setRegistryError(null)
 
       try {
-        const response = await fetch(BUILTIN_T40S_URL)
+        const response = await fetch(REGISTRY_URL)
         if (!response.ok) {
-          throw new Error(`Failed to load t40s config (HTTP ${response.status})`)
+          throw new Error(`Failed to load widget registry (HTTP ${response.status})`)
         }
 
-        const jsonText = await response.text()
-        const parsedResult = parseWidgetConfigJson(jsonText)
-
-        if (!parsedResult.ok) {
-          throw new Error(parsedResult.error)
-        }
+        const payload = (await response.json()) as unknown
+        const nextRegistry = parseRegistry(payload)
 
         if (!cancelled) {
-          setBuiltinConfig(parsedResult.config)
+          setRegistry(nextRegistry)
+          setSourceType((prev) => {
+            const hasPrevBuiltin = nextRegistry.devices.some(
+              (entry) => entry.deviceType === prev,
+            )
+            if (prev === CUSTOM_SOURCE_TYPE || hasPrevBuiltin) {
+              return prev
+            }
+
+            return findFirstBuiltinSource(nextRegistry)
+          })
         }
       } catch (error) {
         if (!cancelled) {
-          setBuiltinError(
-            error instanceof Error ? error.message : 'Failed to load t40s config',
+          setRegistry(buildFallbackRegistry())
+          setRegistryError(
+            error instanceof Error ? error.message : 'Failed to load widget registry',
           )
         }
       } finally {
         if (!cancelled) {
-          setLoadingBuiltin(false)
+          setRegistryLoading(false)
         }
       }
     }
 
-    void loadBuiltinConfig()
+    void loadRegistry()
 
     return () => {
       cancelled = true
     }
-  }, [builtinConfig, open, sourceType])
+  }, [open])
 
   useEffect(() => {
     if (!open) {
@@ -106,13 +221,77 @@ export const WidgetValueExampleModal = ({
     setCustomError(null)
   }, [open])
 
-  const activeConfig = useMemo(() => {
-    if (sourceType === 't40s') {
-      return builtinConfig
+  const activeBuiltinEntry = useMemo(
+    () => registry.devices.find((entry) => entry.deviceType === sourceType) ?? null,
+    [registry.devices, sourceType],
+  )
+
+  useEffect(() => {
+    if (!open || sourceType === CUSTOM_SOURCE_TYPE || !activeBuiltinEntry) {
+      return
     }
 
-    return customConfig
-  }, [builtinConfig, customConfig, sourceType])
+    const cachedConfig = builtinConfigs[sourceType]
+    if (cachedConfig) {
+      return
+    }
+
+    let cancelled = false
+
+    const loadBuiltinConfig = async () => {
+      setLoadingBuiltinType(sourceType)
+      setBuiltinError(null)
+
+      try {
+        const response = await fetch(activeBuiltinEntry.url)
+        if (!response.ok) {
+          throw new Error(
+            `Failed to load ${sourceType} config (HTTP ${response.status})`,
+          )
+        }
+
+        const jsonText = await response.text()
+        const parsedResult = parseWidgetConfigJson(jsonText)
+
+        if (!parsedResult.ok) {
+          throw new Error(parsedResult.error)
+        }
+
+        if (!cancelled) {
+          setBuiltinConfigs((prev) => ({
+            ...prev,
+            [sourceType]: parsedResult.config,
+          }))
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setBuiltinError(
+            error instanceof Error
+              ? error.message
+              : `Failed to load ${sourceType} config`,
+          )
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingBuiltinType(null)
+        }
+      }
+    }
+
+    void loadBuiltinConfig()
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeBuiltinEntry, builtinConfigs, open, sourceType])
+
+  const activeConfig = useMemo(() => {
+    if (sourceType === CUSTOM_SOURCE_TYPE) {
+      return customConfig
+    }
+
+    return builtinConfigs[sourceType] ?? null
+  }, [builtinConfigs, customConfig, sourceType])
 
   const handleCustomFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0]
@@ -172,6 +351,10 @@ export const WidgetValueExampleModal = ({
     return null
   }
 
+  const isCustomSource = sourceType === CUSTOM_SOURCE_TYPE
+  const isBuiltinLoading =
+    !isCustomSource && loadingBuiltinType !== null && loadingBuiltinType === sourceType
+
   return (
     <div
       className='fixed inset-0 z-50 flex items-center justify-center bg-coal-950/75 px-4 py-6'
@@ -192,23 +375,26 @@ export const WidgetValueExampleModal = ({
           <div className='rounded-xl border border-steel-700/40 bg-coal-900/60 p-4'>
             <p className='label'>Device Type</p>
             <div className='mt-3 flex flex-wrap gap-2'>
+              {registry.devices.map((entry) => (
+                <button
+                  className={`btn ${sourceType === entry.deviceType ? 'btn-primary' : ''}`}
+                  key={entry.deviceType}
+                  onClick={() => setSourceType(entry.deviceType)}
+                  type='button'
+                >
+                  {entry.deviceType}
+                </button>
+              ))}
               <button
-                className={`btn ${sourceType === 't40s' ? 'btn-primary' : ''}`}
-                onClick={() => setSourceType('t40s')}
-                type='button'
-              >
-                t40s
-              </button>
-              <button
-                className={`btn ${sourceType === 'custom' ? 'btn-primary' : ''}`}
-                onClick={() => setSourceType('custom')}
+                className={`btn ${isCustomSource ? 'btn-primary' : ''}`}
+                onClick={() => setSourceType(CUSTOM_SOURCE_TYPE)}
                 type='button'
               >
                 custom
               </button>
             </div>
 
-            {sourceType === 'custom' && (
+            {isCustomSource && (
               <div className='mt-4 space-y-3'>
                 <div className='flex flex-wrap items-center gap-3'>
                   <input
@@ -230,10 +416,21 @@ export const WidgetValueExampleModal = ({
               </div>
             )}
 
-            {sourceType === 't40s' && loadingBuiltin && (
-              <p className='mt-3 text-xs text-steel-400'>Loading t40s config...</p>
+            {registryLoading && (
+              <p className='mt-3 text-xs text-steel-400'>Loading widget config registry...</p>
             )}
-            {sourceType === 't40s' && builtinError && (
+            {registryError && (
+              <p className='mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-400'>
+                {registryError}
+              </p>
+            )}
+
+            {!isCustomSource && isBuiltinLoading && (
+              <p className='mt-3 text-xs text-steel-400'>
+                Loading {sourceType} config...
+              </p>
+            )}
+            {!isCustomSource && builtinError && (
               <p className='mt-3 rounded-lg border border-warn-500/40 bg-warn-500/10 px-3 py-2 text-xs text-warn-500'>
                 {builtinError}
               </p>
@@ -244,15 +441,15 @@ export const WidgetValueExampleModal = ({
             <div className='flex items-center justify-between gap-3'>
               <p className='label'>Widget Actions</p>
               <span className='text-xs text-steel-400'>
-                Source: {sourceType === 't40s' ? 't40s' : customFileName || 'custom'}
+                Source: {isCustomSource ? customFileName || 'custom' : sourceType}
               </span>
             </div>
 
             {!activeConfig ? (
               <div className='mt-4 rounded-lg border border-dashed border-steel-700/60 bg-coal-900/30 px-4 py-6 text-sm text-steel-400'>
-                {sourceType === 'custom'
+                {isCustomSource
                   ? 'Please upload a valid widget_config.json first.'
-                  : 'Waiting for t40s config to load...'}
+                  : `Waiting for ${sourceType} config to load...`}
               </div>
             ) : activeConfig.widgets.length === 0 ? (
               <div className='mt-4 rounded-lg border border-dashed border-steel-700/60 bg-coal-900/30 px-4 py-6 text-sm text-steel-400'>

@@ -1,0 +1,15 @@
+{
+  "generatedAt": "2026-02-11T02:52:22.954Z",
+  "devices": [
+    {
+      "deviceType": "t30s",
+      "fileName": "t30s_widget_config.json",
+      "url": "/widget-configs/t30s_widget_config.json"
+    },
+    {
+      "deviceType": "t40s",
+      "fileName": "t40s_widget_config.json",
+      "url": "/widget-configs/t40s_widget_config.json"
+    }
+  ]
+}
