@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { InlineSpinner, SectionHeader } from "./ui";
 import type { CommandFeedback } from "../../types/psdk";
 import { COMMAND_METHOD_LABELS, formatShortTid } from "./view-helpers";
+import { WidgetValueExampleModal } from './WidgetValueExampleModal'
 
 interface SpeakerControlPanelProps {
   pendingTotal: number;
@@ -105,8 +107,16 @@ export const SpeakerControlPanel = ({
   pendingWidgetValueSet,
   handleWidgetValueSet,
 }: SpeakerControlPanelProps) => {
+  const [widgetExampleModalOpen, setWidgetExampleModalOpen] = useState(false)
+
+  const handleWidgetExamplePick = (index: number, value: number) => {
+    setWidgetIndex(index)
+    setWidgetValue(value)
+  }
+
   return (
-    <section className="panel">
+    <>
+      <section className="panel">
       <SectionHeader title="PSDK Control" subtitle="Commands" />
       <div className="mt-5 space-y-3">
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-steel-700/45 bg-coal-900/50 px-4 py-3 text-sm text-steel-300">
@@ -400,9 +410,18 @@ export const SpeakerControlPanel = ({
         </div>
 
         <div className="flex h-full flex-col rounded-xl border border-steel-700/40 bg-coal-900/60 p-4">
-          <p className="text-xs uppercase tracking-[0.2em] text-steel-400">
-            Widget Value Set
-          </p>
+          <div className='flex flex-wrap items-center justify-between gap-3'>
+            <p className="text-xs uppercase tracking-[0.2em] text-steel-400">
+              Widget Value Set
+            </p>
+            <button
+              className='btn h-8 px-3 text-xs'
+              onClick={() => setWidgetExampleModalOpen(true)}
+              type='button'
+            >
+              e.g.
+            </button>
+          </div>
           <div className="mt-3 grid flex-1 gap-3">
             <div className="flex flex-wrap items-center gap-3">
               <label className="label m-0">Widget Index</label>
@@ -447,6 +466,12 @@ export const SpeakerControlPanel = ({
           </div>
         </div>
       </div>
-    </section>
+      </section>
+      <WidgetValueExampleModal
+        open={widgetExampleModalOpen}
+        onClose={() => setWidgetExampleModalOpen(false)}
+        onPick={handleWidgetExamplePick}
+      />
+    </>
   );
 };
