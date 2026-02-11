@@ -1,15 +1,15 @@
 {
-  "generatedAt": "2026-02-11T06:27:10.075Z",
+  "generatedAt": "2026-02-11T06:35:07.827Z",
   "devices": [
     {
-      "deviceType": "t30s",
-      "fileName": "t30s_widget_config.json",
-      "url": "/widget-configs/t30s_widget_config.json"
+      "deviceType": "JZ_t30s",
+      "fileName": "JZ_t30s_widget_config.json",
+      "url": "/widget-configs/JZ_t30s_widget_config.json"
     },
     {
-      "deviceType": "t40s",
-      "fileName": "t40s_widget_config.json",
-      "url": "/widget-configs/t40s_widget_config.json"
+      "deviceType": "JZ_t40s",
+      "fileName": "JZ_t40s_widget_config.json",
+      "url": "/widget-configs/JZ_t40s_widget_config.json"
     }
   ]
 }
