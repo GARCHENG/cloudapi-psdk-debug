@@ -29,6 +29,7 @@ interface WidgetValueExampleModalProps {
 export interface WidgetExamplePick {
   index: number
   value: number
+  deviceType: string
   description: string
 }
 
@@ -157,6 +158,9 @@ export const WidgetValueExampleModal = ({
   const [customFileName, setCustomFileName] = useState('')
   const [customError, setCustomError] = useState<string | null>(null)
   const [scaleValues, setScaleValues] = useState<Record<number, number>>({})
+  const [expandedWidgetIndex, setExpandedWidgetIndex] = useState<number | null>(
+    null,
+  )
 
   useEffect(() => {
     if (!open) {
@@ -293,6 +297,24 @@ export const WidgetValueExampleModal = ({
     return builtinConfigs[sourceType] ?? null
   }, [builtinConfigs, customConfig, sourceType])
 
+  useEffect(() => {
+    setExpandedWidgetIndex(null)
+  }, [open, sourceType])
+
+  useEffect(() => {
+    if (expandedWidgetIndex === null || !activeConfig) {
+      return
+    }
+
+    const hasExpandedWidget = activeConfig.widgets.some(
+      (widget) => widget.widgetIndex === expandedWidgetIndex,
+    )
+
+    if (!hasExpandedWidget) {
+      setExpandedWidgetIndex(null)
+    }
+  }, [activeConfig, expandedWidgetIndex])
+
   const handleCustomFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0]
     if (!selectedFile) {
@@ -331,9 +353,15 @@ export const WidgetValueExampleModal = ({
     widgetValue: number,
     description: string,
   ) => {
+    const pickedDeviceType =
+      sourceType === CUSTOM_SOURCE_TYPE
+        ? CUSTOM_SOURCE_TYPE
+        : sourceType
+
     onPick({
       index: widgetIndex,
       value: widgetValue,
+      deviceType: pickedDeviceType,
       description,
     })
     onClose()
@@ -461,97 +489,115 @@ export const WidgetValueExampleModal = ({
                   const actions = buildWidgetActions(widget)
                   const currentScaleValue =
                     scaleValues[widget.widgetIndex] ?? DEFAULT_SCALE_VALUE
+                  const isExpanded = expandedWidgetIndex === widget.widgetIndex
 
                   return (
                     <div
                       className='rounded-xl border border-steel-700/45 bg-coal-900/55 p-3'
                       key={`${widget.widgetIndex}-${widget.widgetType}`}
                     >
-                      <div className='flex flex-wrap items-center gap-2'>
-                        <span className='text-sm text-steel-100'>{widget.widgetName}</span>
-                        <span className='chip border-steel-600/70 bg-transparent text-[11px] text-steel-300'>
-                          index {widget.widgetIndex}
-                        </span>
-                        <span
-                          className={`chip bg-transparent text-[11px] uppercase ${getWidgetTypeBadgeTone(
-                            widget.widgetType,
-                          )}`}
-                        >
-                          {widget.widgetType}
-                        </span>
-                      </div>
+                      <button
+                        className={`w-full text-left transition ${
+                          isExpanded ? 'opacity-100' : 'opacity-90 hover:opacity-100'
+                        }`}
+                        onClick={() =>
+                          setExpandedWidgetIndex(isExpanded ? null : widget.widgetIndex)
+                        }
+                        type='button'
+                      >
+                        <div className='flex flex-wrap items-center gap-2'>
+                          <span className='text-sm text-steel-100'>{widget.widgetName}</span>
+                          <span className='chip border-steel-600/70 bg-transparent text-[11px] text-steel-300'>
+                            index {widget.widgetIndex}
+                          </span>
+                          <span
+                            className={`chip bg-transparent text-[11px] uppercase ${getWidgetTypeBadgeTone(
+                              widget.widgetType,
+                            )}`}
+                          >
+                            {widget.widgetType}
+                          </span>
+                          <span className='ml-auto text-xs text-steel-400'>
+                            {isExpanded ? 'Collapse' : 'Expand'}
+                          </span>
+                        </div>
+                      </button>
 
-                      {widget.widgetType === 'scale' ? (
-                        <div className='mt-3 grid gap-3'>
-                          <div className='flex flex-wrap items-center gap-3'>
-                            <label className='label m-0'>Scale Value</label>
-                            <input
-                              className='input w-24'
-                              max={100}
-                              min={0}
-                              onChange={(event) =>
-                                updateScaleValue(
-                                  widget.widgetIndex,
-                                  Number(event.target.value),
-                                )
-                              }
-                              step={1}
-                              type='number'
-                              value={currentScaleValue}
-                            />
-                            <button
-                              className='btn btn-primary h-9 px-3'
-                              onClick={() =>
-                                applyWidgetValue(
-                                  widget.widgetIndex,
-                                  currentScaleValue,
-                                  `${widget.widgetName}: ${currentScaleValue}`,
-                                )
-                              }
-                              type='button'
-                            >
-                              Apply
-                            </button>
-                          </div>
-                          <input
-                            className='accent-signal-500'
-                            max={100}
-                            min={0}
-                            onChange={(event) =>
-                              updateScaleValue(
-                                widget.widgetIndex,
-                                Number(event.target.value),
-                              )
-                            }
-                            step={1}
-                            type='range'
-                            value={currentScaleValue}
-                          />
-                        </div>
-                      ) : actions.length === 0 ? (
-                        <p className='mt-3 text-xs text-steel-400'>No actions available.</p>
-                      ) : (
-                        <div className='mt-3 flex flex-wrap gap-2'>
-                          {actions.map((action) => (
-                            <button
-                              className='btn h-9 px-3'
-                              key={`${widget.widgetIndex}-${action.value}-${action.label}`}
-                              onClick={() =>
-                                applyWidgetValue(
-                                  widget.widgetIndex,
-                                  action.value,
-                                  `${widget.widgetName}: ${action.label}`,
-                                )
-                              }
-                              type='button'
-                            >
-                              {action.label}
-                              <span className='chip ml-1 border-steel-600/70 bg-transparent text-[11px] text-steel-400'>
-                                value {action.value}
-                              </span>
-                            </button>
-                          ))}
-                        </div>
+                      {isExpanded && (
+                        <>
+                          {widget.widgetType === 'scale' ? (
+                            <div className='mt-3 grid gap-3'>
+                              <div className='flex flex-wrap items-center gap-3'>
+                                <label className='label m-0'>Scale Value</label>
+                                <input
+                                  className='input w-24'
+                                  max={100}
+                                  min={0}
+                                  onChange={(event) =>
+                                    updateScaleValue(
+                                      widget.widgetIndex,
+                                      Number(event.target.value),
+                                    )
+                                  }
+                                  step={1}
+                                  type='number'
+                                  value={currentScaleValue}
+                                />
+                                <button
+                                  className='btn btn-primary h-9 px-3'
+                                  onClick={() =>
+                                    applyWidgetValue(
+                                      widget.widgetIndex,
+                                      currentScaleValue,
+                                      `${widget.widgetName}: ${currentScaleValue}`,
+                                    )
+                                  }
+                                  type='button'
+                                >
+                                  Apply
+                                </button>
+                              </div>
+                              <input
+                                className='accent-signal-500'
+                                max={100}
+                                min={0}
+                                onChange={(event) =>
+                                  updateScaleValue(
+                                    widget.widgetIndex,
+                                    Number(event.target.value),
+                                  )
+                                }
+                                step={1}
+                                type='range'
+                                value={currentScaleValue}
+                              />
+                            </div>
+                          ) : actions.length === 0 ? (
+                            <p className='mt-3 text-xs text-steel-400'>No actions available.</p>
+                          ) : (
+                            <div className='mt-3 flex flex-wrap gap-2'>
+                              {actions.map((action) => (
+                                <button
+                                  className='btn h-9 px-3'
+                                  key={`${widget.widgetIndex}-${action.value}-${action.label}`}
+                                  onClick={() =>
+                                    applyWidgetValue(
+                                      widget.widgetIndex,
+                                      action.value,
+                                      `${widget.widgetName}: ${action.label}`,
+                                    )
+                                  }
+                                  type='button'
+                                >
+                                  {action.label}
+                                  <span className='chip ml-1 border-steel-600/70 bg-transparent text-[11px] text-steel-400'>
+                                    value {action.value}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   )

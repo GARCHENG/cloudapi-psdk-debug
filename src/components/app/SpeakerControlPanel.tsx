@@ -111,15 +111,18 @@ export const SpeakerControlPanel = ({
   handleWidgetValueSet,
 }: SpeakerControlPanelProps) => {
   const [widgetExampleModalOpen, setWidgetExampleModalOpen] = useState(false)
+  const [widgetExampleDeviceType, setWidgetExampleDeviceType] = useState('')
   const [widgetExampleDescription, setWidgetExampleDescription] = useState('')
 
   const handleWidgetExamplePick = ({
     index,
     value,
+    deviceType,
     description,
   }: WidgetExamplePick) => {
     setWidgetIndex(index)
     setWidgetValue(value)
+    setWidgetExampleDeviceType(deviceType)
     setWidgetExampleDescription(description)
   }
 
@@ -441,6 +444,7 @@ export const SpeakerControlPanel = ({
                 value={widgetIndex}
                 onChange={(event) => {
                   setWidgetIndex(Number(event.target.value))
+                  setWidgetExampleDeviceType('')
                   setWidgetExampleDescription('')
                 }}
                 className="input w-24"
@@ -453,13 +457,19 @@ export const SpeakerControlPanel = ({
                 value={widgetValue}
                 onChange={(event) => {
                   setWidgetValue(Number(event.target.value))
+                  setWidgetExampleDeviceType('')
                   setWidgetExampleDescription('')
                 }}
                 className="input w-24"
               />
             </div>
             {widgetExampleDescription && (
-              <p className='rounded-lg border border-signal-500/40 bg-signal-500/10 px-3 py-2 text-sm text-signal-400'>
+              <p className='flex flex-wrap items-center gap-2 rounded-lg border border-signal-500/40 bg-signal-500/10 px-3 py-2 text-sm text-signal-400'>
+                {widgetExampleDeviceType && (
+                  <span className='chip border-signal-500/45 bg-signal-500/15 text-[11px] uppercase text-signal-300'>
+                    {widgetExampleDeviceType}
+                  </span>
+                )}
                 {widgetExampleDescription}
               </p>
             )}
