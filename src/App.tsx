@@ -127,6 +127,7 @@ function App() {
     timestamp: number;
   } | null>(null);
   const [psdkState, setPsdkState] = useState<PsdkStatePayload | null>(null);
+  const [psdkStateAt, setPsdkStateAt] = useState<number | null>(null);
   const [commandLogs, setCommandLogs] = useState<CommandLogEntry[]>([]);
   const [commandFeedbacks, setCommandFeedbacks] = useState<CommandFeedback[]>(
     [],
@@ -401,6 +402,7 @@ function App() {
         const data = record.data as PsdkStatePayload | undefined;
         if (data && Array.isArray(data.psdk_widget_values)) {
           setPsdkState(data);
+          setPsdkStateAt(Date.now());
         }
       }
 
@@ -739,6 +741,7 @@ function App() {
           <PsdkStatePanel
             activeEntry={activeEntry}
             linkedSourceType={widgetConfigSourceType}
+            stateReceivedAt={psdkStateAt}
           />
         </div>
 

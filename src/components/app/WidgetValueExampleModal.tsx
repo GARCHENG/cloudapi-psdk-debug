@@ -131,14 +131,6 @@ const parseRegistry = (payload: unknown): WidgetConfigRegistry => {
   }
 }
 
-const findFirstBuiltinSource = (registry: WidgetConfigRegistry) => {
-  if (registry.devices.length === 0) {
-    return CUSTOM_SOURCE_TYPE
-  }
-
-  return registry.devices[0].deviceType
-}
-
 export const WidgetValueExampleModal = ({
   open,
   onClose,
@@ -147,7 +139,7 @@ export const WidgetValueExampleModal = ({
   const [registry, setRegistry] = useState<WidgetConfigRegistry>(buildFallbackRegistry)
   const [registryLoading, setRegistryLoading] = useState(false)
   const [registryError, setRegistryError] = useState<string | null>(null)
-  const [sourceType, setSourceType] = useState<WidgetSourceType>('t40s')
+  const [sourceType, setSourceType] = useState<WidgetSourceType>('')
   const [builtinConfigs, setBuiltinConfigs] = useState<
     Record<string, NormalizedWidgetConfig>
   >({})
@@ -192,7 +184,7 @@ export const WidgetValueExampleModal = ({
               return prev
             }
 
-            return findFirstBuiltinSource(nextRegistry)
+            return ''
           })
         }
       } catch (error) {
@@ -380,6 +372,7 @@ export const WidgetValueExampleModal = ({
   }
 
   const isCustomSource = sourceType === CUSTOM_SOURCE_TYPE
+  const hasSelectedSource = sourceType.trim().length > 0
   const isBuiltinLoading =
     !isCustomSource && loadingBuiltinType !== null && loadingBuiltinType === sourceType
 
@@ -469,11 +462,15 @@ export const WidgetValueExampleModal = ({
             <div className='flex items-center justify-between gap-3'>
               <p className='label'>Widget Actions</p>
               <span className='text-xs text-steel-400'>
-                Source: {isCustomSource ? customFileName || 'custom' : sourceType}
+                Source: {isCustomSource ? customFileName || 'custom' : sourceType || 'N/A'}
               </span>
             </div>
 
-            {!activeConfig ? (
+            {!hasSelectedSource ? (
+              <div className='mt-4 rounded-lg border border-dashed border-steel-700/60 bg-coal-900/30 px-4 py-6 text-sm text-steel-400'>
+                No device type selected. Please choose one to view widget actions.
+              </div>
+            ) : !activeConfig ? (
               <div className='mt-4 rounded-lg border border-dashed border-steel-700/60 bg-coal-900/30 px-4 py-6 text-sm text-steel-400'>
                 {isCustomSource
                   ? 'Please upload a valid widget_config.json first.'

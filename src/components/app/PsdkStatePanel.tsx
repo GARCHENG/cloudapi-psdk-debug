@@ -5,6 +5,7 @@ import {
   getSystemStateLabel,
   getWorkModeLabel,
 } from '../../lib/psdk'
+import { formatTimestamp } from './view-helpers'
 import {
   type NormalizedWidgetConfig,
   type NormalizedWidgetEntry,
@@ -15,6 +16,7 @@ import type { PsdkStateEntry } from '../../types/psdk'
 interface PsdkStatePanelProps {
   activeEntry?: PsdkStateEntry
   linkedSourceType?: string
+  stateReceivedAt?: number | null
 }
 
 type WidgetSourceType = string
@@ -161,6 +163,7 @@ const parseRegistry = (payload: unknown): WidgetConfigRegistry => {
 export const PsdkStatePanel = ({
   activeEntry,
   linkedSourceType = '',
+  stateReceivedAt = null,
 }: PsdkStatePanelProps) => {
   const [widgetStateOpen, setWidgetStateOpen] = useState(false)
 
@@ -454,6 +457,7 @@ export const PsdkStatePanel = ({
                   <span>SN: {activeEntry.psdk_sn ?? 'N/A'}</span>
                   <span>Version: {activeEntry.psdk_version ?? 'N/A'}</span>
                   <span>Lib: {activeEntry.psdk_lib_version ?? 'N/A'}</span>
+                  <span>Last /state: {formatTimestamp(stateReceivedAt)}</span>
                 </div>
               </div>
               <div className='rounded-xl border border-steel-700/40 bg-coal-900/60 p-4'>
