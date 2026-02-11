@@ -680,8 +680,23 @@ function App() {
 
   return (
     <div className="min-h-screen">
-      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-10">
-        <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="sticky top-3 z-30 px-6 pt-4">
+        <div className="mx-auto flex max-w-6xl justify-end">
+          <div className="flex flex-wrap items-center gap-3 rounded-full border border-steel-700/70 bg-coal-950/80 px-3 py-2 shadow-panel backdrop-blur">
+            <StatusBadge
+              label={`MQTT ${status}`}
+              tone={mqttStatusTone[status]}
+            />
+            <StatusBadge
+              label={`PSDK ${onlineState}`}
+              tone={onlineTone[onlineState]}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 pb-10 pt-6">
+        <header className="flex flex-col gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.45em] text-signal-400">
               PSDK MQTT
@@ -691,16 +706,6 @@ function App() {
               Manual control surface for speaker workflows, floating window
               status, and command diagnostics.
             </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <StatusBadge
-              label={`MQTT ${status}`}
-              tone={mqttStatusTone[status]}
-            />
-            <StatusBadge
-              label={`PSDK ${onlineState}`}
-              tone={onlineTone[onlineState]}
-            />
           </div>
         </header>
 
