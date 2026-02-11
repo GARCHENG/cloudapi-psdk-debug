@@ -12,7 +12,13 @@ type WidgetSourceType = 't40s' | 'custom'
 interface WidgetValueExampleModalProps {
   open: boolean
   onClose: () => void
-  onPick: (index: number, value: number) => void
+  onPick: (pick: WidgetExamplePick) => void
+}
+
+export interface WidgetExamplePick {
+  index: number
+  value: number
+  description: string
 }
 
 const BUILTIN_T40S_URL = '/widget-configs/t40s_widget_config.json'
@@ -141,8 +147,16 @@ export const WidgetValueExampleModal = ({
     event.target.value = ''
   }
 
-  const applyWidgetValue = (widgetIndex: number, widgetValue: number) => {
-    onPick(widgetIndex, widgetValue)
+  const applyWidgetValue = (
+    widgetIndex: number,
+    widgetValue: number,
+    description: string,
+  ) => {
+    onPick({
+      index: widgetIndex,
+      value: widgetValue,
+      description,
+    })
     onClose()
   }
 
@@ -291,7 +305,11 @@ export const WidgetValueExampleModal = ({
                             <button
                               className='btn btn-primary h-9 px-3'
                               onClick={() =>
-                                applyWidgetValue(widget.widgetIndex, currentScaleValue)
+                                applyWidgetValue(
+                                  widget.widgetIndex,
+                                  currentScaleValue,
+                                  `${widget.widgetName}: ${currentScaleValue}`,
+                                )
                               }
                               type='button'
                             >
@@ -322,7 +340,11 @@ export const WidgetValueExampleModal = ({
                               className='btn h-9 px-3'
                               key={`${widget.widgetIndex}-${action.value}-${action.label}`}
                               onClick={() =>
-                                applyWidgetValue(widget.widgetIndex, action.value)
+                                applyWidgetValue(
+                                  widget.widgetIndex,
+                                  action.value,
+                                  `${widget.widgetName}: ${action.label}`,
+                                )
                               }
                               type='button'
                             >

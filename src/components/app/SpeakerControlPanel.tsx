@@ -2,7 +2,10 @@ import { useState } from 'react'
 import { InlineSpinner, SectionHeader } from "./ui";
 import type { CommandFeedback } from "../../types/psdk";
 import { COMMAND_METHOD_LABELS, formatShortTid } from "./view-helpers";
-import { WidgetValueExampleModal } from './WidgetValueExampleModal'
+import {
+  WidgetValueExampleModal,
+  type WidgetExamplePick,
+} from './WidgetValueExampleModal'
 
 interface SpeakerControlPanelProps {
   pendingTotal: number;
@@ -108,10 +111,16 @@ export const SpeakerControlPanel = ({
   handleWidgetValueSet,
 }: SpeakerControlPanelProps) => {
   const [widgetExampleModalOpen, setWidgetExampleModalOpen] = useState(false)
+  const [widgetExampleDescription, setWidgetExampleDescription] = useState('')
 
-  const handleWidgetExamplePick = (index: number, value: number) => {
+  const handleWidgetExamplePick = ({
+    index,
+    value,
+    description,
+  }: WidgetExamplePick) => {
     setWidgetIndex(index)
     setWidgetValue(value)
+    setWidgetExampleDescription(description)
   }
 
   return (
@@ -430,7 +439,10 @@ export const SpeakerControlPanel = ({
                 min={0}
                 step={1}
                 value={widgetIndex}
-                onChange={(event) => setWidgetIndex(Number(event.target.value))}
+                onChange={(event) => {
+                  setWidgetIndex(Number(event.target.value))
+                  setWidgetExampleDescription('')
+                }}
                 className="input w-24"
               />
             </div>
@@ -439,10 +451,18 @@ export const SpeakerControlPanel = ({
               <input
                 type="number"
                 value={widgetValue}
-                onChange={(event) => setWidgetValue(Number(event.target.value))}
+                onChange={(event) => {
+                  setWidgetValue(Number(event.target.value))
+                  setWidgetExampleDescription('')
+                }}
                 className="input w-24"
               />
             </div>
+            {widgetExampleDescription && (
+              <p className='rounded-lg border border-signal-500/40 bg-signal-500/10 px-3 py-2 text-sm text-signal-400'>
+                {widgetExampleDescription}
+              </p>
+            )}
             <button
               className="btn mt-auto"
               onClick={handleWidgetValueSet}
