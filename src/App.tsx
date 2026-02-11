@@ -801,6 +801,11 @@ function App() {
           logModalOpen={logModalOpen}
           setLogModalOpen={setLogModalOpen}
         />
+
+        <footer className="pt-2 text-center text-xs text-steel-500">
+          Created by <span className="text-steel-300">GARCHENG</span> · Powered
+          by <span className="text-steel-300">Codex</span>
+        </footer>
       </div>
     </div>
   );
