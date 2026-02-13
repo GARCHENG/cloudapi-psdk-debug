@@ -17,12 +17,17 @@ export interface CommandSequenceDefaults {
   inputBoxText: string
   widgetIndex: number
   widgetValue: number
+  waitSeconds: number
 }
 
 interface CommandSequenceAddModalProps {
   locked: boolean
   defaults: CommandSequenceDefaults
-  onAddStep: (method: PsdkCommandMethod, data: Record<string, unknown>) => void
+  onAddStep: (
+    method: PsdkCommandMethod,
+    data: Record<string, unknown>,
+    waitSeconds: number,
+  ) => void
   onClose: () => void
 }
 
@@ -107,6 +112,9 @@ export const CommandSequenceAddModal = ({
   const validateDraft = (method: PsdkCommandMethod) => {
     if (!Number.isFinite(draft.psdkIndex) || draft.psdkIndex < 0) {
       return 'PSDK index is required.'
+    }
+    if (!Number.isFinite(draft.waitSeconds) || draft.waitSeconds < 0) {
+      return 'Wait seconds must be 0 or greater.'
     }
     if (method === 'speaker_audio_play_start') {
       if (
@@ -226,6 +234,23 @@ export const CommandSequenceAddModal = ({
                       step={1}
                       type='number'
                       value={Number.isFinite(draft.psdkIndex) ? draft.psdkIndex : ''}
+                    />
+                  </div>
+                  <div className='flex flex-wrap items-center gap-3'>
+                    <label className='label m-0'>Wait (sec)</label>
+                    <input
+                      className='input w-28'
+                      min={0}
+                      onChange={(event) =>
+                        handleDraftNumberChange(event.target.value, (next) =>
+                          setDraft((prev) => ({ ...prev, waitSeconds: next })),
+                        )
+                      }
+                      step={0.5}
+                      type='number'
+                      value={
+                        Number.isFinite(draft.waitSeconds) ? draft.waitSeconds : ''
+                      }
                     />
                   </div>
 
@@ -452,7 +477,11 @@ export const CommandSequenceAddModal = ({
                       if (!selectedMethod) return
                       const error = validateDraft(selectedMethod)
                       if (error) return
-                      onAddStep(selectedMethod, buildDraftData(selectedMethod))
+                      onAddStep(
+                        selectedMethod,
+                        buildDraftData(selectedMethod),
+                        draft.waitSeconds,
+                      )
                       onClose()
                     }}
                     type='button'

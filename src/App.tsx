@@ -83,6 +83,7 @@ const isSpeakerProgressMethod = (
 const COMMAND_FEEDBACK_TTL_MS = 6000;
 const COMMAND_REPLY_TIMEOUT_MS = 10000;
 const MAX_FEEDBACKS = 4;
+const DEFAULT_SEQUENCE_WAIT_MS = 3000;
 
 interface PendingCommand {
   method: PsdkCommandMethod;
@@ -95,6 +96,12 @@ interface TimeoutMeta {
 }
 
 type CommandAwaiter = (result: SequenceStepResult) => void;
+
+interface SequenceWaitState {
+  index: number;
+  remainingMs: number;
+  totalMs: number;
+}
 
 function App() {
   const [mqttEnabled, setMqttEnabled] = useState(false);
@@ -147,6 +154,12 @@ function App() {
     null,
   );
   const [sequenceError, setSequenceError] = useState<string | null>(null);
+  const [sequenceDefaultWaitSeconds, setSequenceDefaultWaitSeconds] = useState(
+    DEFAULT_SEQUENCE_WAIT_MS / 1000,
+  );
+  const [sequenceWait, setSequenceWait] = useState<SequenceWaitState | null>(
+    null,
+  );
   const [stopRequested, setStopRequested] = useState(false);
   const [logModalOpen, setLogModalOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -941,16 +954,27 @@ function App() {
     setSequenceStatus("idle");
     setSequenceActiveIndex(null);
     setSequenceError(null);
+    setSequenceWait(null);
     setStopRequested(false);
     stopRequestedRef.current = false;
   }, []);
 
   const addSequenceStep = useCallback(
-    (method: PsdkCommandMethod, dataOverride?: Record<string, unknown>) => {
+    (
+      method: PsdkCommandMethod,
+      dataOverride?: Record<string, unknown>,
+      waitSeconds?: number,
+    ) => {
       if (sequenceRunning) return;
       const data = dataOverride ?? buildStepData(method);
       if (!data) return;
       const summary = buildStepSummary(method, data);
+      const fallbackWaitMs = Number.isFinite(sequenceDefaultWaitSeconds)
+        ? Math.max(0, sequenceDefaultWaitSeconds) * 1000
+        : DEFAULT_SEQUENCE_WAIT_MS;
+      const waitMs = Number.isFinite(waitSeconds)
+        ? Math.max(0, waitSeconds) * 1000
+        : fallbackWaitMs;
       setSequenceSteps((prev) => [
         ...prev,
         {
@@ -958,11 +982,18 @@ function App() {
           method,
           data,
           summary,
+          waitMs,
         },
       ]);
       resetSequenceMeta();
     },
-    [buildStepData, buildStepSummary, resetSequenceMeta, sequenceRunning],
+    [
+      buildStepData,
+      buildStepSummary,
+      resetSequenceMeta,
+      sequenceDefaultWaitSeconds,
+      sequenceRunning,
+    ],
   );
 
   const moveSequenceStep = useCallback(
@@ -1028,6 +1059,7 @@ function App() {
     stopRequestedRef.current = false;
     setStopRequested(false);
     setSequenceError(null);
+    setSequenceWait(null);
     setSequenceStatus("running");
     setSequenceActiveIndex(null);
     setSequenceResults(
@@ -1062,12 +1094,42 @@ function App() {
       });
     };
 
+    const waitForDelay = async (delayMs: number, stepIndex: number) => {
+      const totalMs = Number.isFinite(delayMs) ? Math.max(0, delayMs) : 0;
+      if (totalMs <= 0) {
+        setSequenceWait(null);
+        return true;
+      }
+
+      const startedAt = Date.now();
+      setSequenceWait({ index: stepIndex, remainingMs: totalMs, totalMs });
+
+      while (Date.now() - startedAt < totalMs) {
+        if (sequenceRunIdRef.current !== runId) {
+          setSequenceWait(null);
+          return false;
+        }
+        if (stopRequestedRef.current) {
+          setSequenceWait(null);
+          return false;
+        }
+        const remaining = Math.max(0, totalMs - (Date.now() - startedAt));
+        setSequenceWait({ index: stepIndex, remainingMs: remaining, totalMs });
+        const nextTick = Math.min(250, remaining);
+        await new Promise((resolve) => window.setTimeout(resolve, nextTick));
+      }
+
+      setSequenceWait(null);
+      return true;
+    };
+
     for (let index = 0; index < stepsSnapshot.length; index += 1) {
       if (sequenceRunIdRef.current !== runId) return;
 
       if (stopRequestedRef.current) {
         setSequenceStatus("stopped");
         setSequenceActiveIndex(null);
+        setSequenceWait(null);
         markSkipped(index);
         setStopRequested(false);
         stopRequestedRef.current = false;
@@ -1097,6 +1159,7 @@ function App() {
         setSequenceError(failureMessage);
         setSequenceStatus("failure");
         setSequenceActiveIndex(null);
+        setSequenceWait(null);
         markSkipped(index + 1);
         setStopRequested(false);
         stopRequestedRef.current = false;
@@ -1106,16 +1169,38 @@ function App() {
       if (stopRequestedRef.current) {
         setSequenceStatus("stopped");
         setSequenceActiveIndex(null);
+        setSequenceWait(null);
         markSkipped(index + 1);
         setStopRequested(false);
         stopRequestedRef.current = false;
         return;
+      }
+
+      if (index < stepsSnapshot.length - 1) {
+        const fallbackWaitMs = Number.isFinite(sequenceDefaultWaitSeconds)
+          ? Math.max(0, sequenceDefaultWaitSeconds) * 1000
+          : DEFAULT_SEQUENCE_WAIT_MS;
+        const waitMs = Number.isFinite(stepsSnapshot[index]?.waitMs)
+          ? Math.max(0, stepsSnapshot[index].waitMs)
+          : fallbackWaitMs;
+        const shouldContinue = await waitForDelay(waitMs, index);
+        if (sequenceRunIdRef.current !== runId) return;
+        if (!shouldContinue) {
+          setSequenceStatus("stopped");
+          setSequenceActiveIndex(null);
+          markSkipped(index + 1);
+          setSequenceWait(null);
+          setStopRequested(false);
+          stopRequestedRef.current = false;
+          return;
+        }
       }
     }
 
     setSequenceStatus("success");
     setSequenceActiveIndex(null);
     setSequenceError(null);
+    setSequenceWait(null);
     setStopRequested(false);
     stopRequestedRef.current = false;
   }, [
@@ -1124,6 +1209,7 @@ function App() {
     sendCommandWithAck,
     sequenceRunning,
     sequenceSteps,
+    sequenceDefaultWaitSeconds,
     servicesTopic,
   ]);
 
@@ -1132,6 +1218,13 @@ function App() {
     stopRequestedRef.current = true;
     setStopRequested(true);
   }, [sequenceRunning]);
+
+  const normalizedSequenceDefaultWaitSeconds = useMemo(() => {
+    if (!Number.isFinite(sequenceDefaultWaitSeconds)) {
+      return DEFAULT_SEQUENCE_WAIT_MS / 1000;
+    }
+    return Math.max(0, sequenceDefaultWaitSeconds);
+  }, [sequenceDefaultWaitSeconds]);
 
   const sequenceDefaults = useMemo(
     () => ({
@@ -1147,6 +1240,7 @@ function App() {
       inputBoxText,
       widgetIndex,
       widgetValue,
+      waitSeconds: normalizedSequenceDefaultWaitSeconds,
     }),
     [
       audioMd5,
@@ -1159,6 +1253,7 @@ function App() {
       ttsMd5,
       ttsName,
       ttsText,
+      normalizedSequenceDefaultWaitSeconds,
       widgetIndex,
       widgetValue,
     ],
@@ -1300,6 +1395,9 @@ function App() {
           stopRequested={stopRequested}
           errorMessage={sequenceError ?? undefined}
           defaults={sequenceDefaults}
+          defaultWaitSeconds={sequenceDefaultWaitSeconds}
+          onDefaultWaitSecondsChange={setSequenceDefaultWaitSeconds}
+          waitState={sequenceWait}
           canRun={canRunSequence}
           onRun={runSequence}
           onStop={stopSequence}

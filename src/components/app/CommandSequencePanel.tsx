@@ -17,6 +17,12 @@ import type {
   SequenceStepStatus,
 } from '../../types/psdk'
 
+type SequenceWaitState = {
+  index: number
+  remainingMs: number
+  totalMs: number
+}
+
 interface CommandSequencePanelProps {
   steps: CommandSequenceStep[]
   results: SequenceStepResult[]
@@ -25,13 +31,20 @@ interface CommandSequencePanelProps {
   stopRequested: boolean
   errorMessage?: string
   defaults: CommandSequenceDefaults
+  defaultWaitSeconds: number
+  onDefaultWaitSecondsChange: (next: number) => void
+  waitState: SequenceWaitState | null
   canRun: boolean
   onRun: () => void
   onStop: () => void
   onClear: () => void
   onMoveStep: (index: number, direction: 'up' | 'down') => void
   onRemoveStep: (index: number) => void
-  onAddStep: (method: PsdkCommandMethod, data: Record<string, unknown>) => void
+  onAddStep: (
+    method: PsdkCommandMethod,
+    data: Record<string, unknown>,
+    waitSeconds: number,
+  ) => void
 }
 
 const getStepTone = (status: SequenceStepStatus) => {
@@ -45,6 +58,17 @@ const getStepLabel = (status: SequenceStepStatus) => {
   return status
 }
 
+const DEFAULT_SEQUENCE_WAIT_MS = 3000
+
+const formatWaitLabel = (waitMs: number) => {
+  const normalizedWaitMs = Number.isFinite(waitMs)
+    ? Math.max(0, waitMs)
+    : DEFAULT_SEQUENCE_WAIT_MS
+  if (normalizedWaitMs <= 0) return '0s'
+  const seconds = normalizedWaitMs / 1000
+  return Number.isInteger(seconds) ? `${seconds}s` : `${seconds.toFixed(1)}s`
+}
+
 export const CommandSequencePanel = ({
   steps,
   results,
@@ -53,6 +77,9 @@ export const CommandSequencePanel = ({
   stopRequested,
   errorMessage,
   defaults,
+  defaultWaitSeconds,
+  onDefaultWaitSecondsChange,
+  waitState,
   canRun,
   onRun,
   onStop,
@@ -64,6 +91,9 @@ export const CommandSequencePanel = ({
   const sequenceLocked = status === 'running'
   const [addOpen, setAddOpen] = useState(false)
   const addModalOpen = addOpen && !sequenceLocked
+  const defaultWaitMs = Number.isFinite(defaultWaitSeconds)
+    ? Math.max(0, defaultWaitSeconds) * 1000
+    : DEFAULT_SEQUENCE_WAIT_MS
 
   const failureSummary = (() => {
     if (status !== 'failure') return null
@@ -102,6 +132,18 @@ export const CommandSequencePanel = ({
     if (status === 'stopped') return 'border-steel-600/60 bg-coal-900/40 text-steel-300'
     return 'border-steel-600/60 bg-coal-900/40 text-steel-400'
   })()
+
+  const waitCountdownLabel = (() => {
+    if (!waitState || status !== 'running') return null
+    const nextStepNumber = Math.min(waitState.index + 2, steps.length)
+    return `Next step in ${formatWaitLabel(waitState.remainingMs)} (step ${nextStepNumber}/${steps.length})`
+  })()
+
+  const handleDefaultWaitChange = (value: string) => {
+    const parsed = value.trim() === '' ? Number.NaN : Number(value)
+    const next = Number.isFinite(parsed) ? Math.max(0, parsed) : parsed
+    onDefaultWaitSecondsChange(next)
+  }
 
   return (
     <section className='panel'>
@@ -146,7 +188,24 @@ export const CommandSequencePanel = ({
               Stop requested
             </span>
           )}
+          {waitCountdownLabel && (
+            <span className='chip border-steel-600/60 bg-coal-900/40 text-steel-300'>
+              {waitCountdownLabel}
+            </span>
+          )}
           <span className='text-steel-400'>Steps: {steps.length}</span>
+          <div className='flex flex-wrap items-center gap-2'>
+            <span className='text-xs text-steel-400'>Default wait (sec)</span>
+            <input
+              className='input h-8 w-24 text-xs'
+              min={0}
+              step={0.5}
+              type='number'
+              value={Number.isFinite(defaultWaitSeconds) ? defaultWaitSeconds : ''}
+              onChange={(event) => handleDefaultWaitChange(event.target.value)}
+              disabled={sequenceLocked}
+            />
+          </div>
         </div>
       </div>
 
@@ -214,6 +273,12 @@ export const CommandSequencePanel = ({
                 <div className='mt-3 flex flex-wrap items-center gap-3 text-xs text-steel-300'>
                   <span className='rounded-full border border-steel-700/70 px-3 py-1'>
                     {step.summary}
+                  </span>
+                  <span className='rounded-full border border-steel-700/70 px-3 py-1 text-steel-400'>
+                    wait{' '}
+                    {formatWaitLabel(
+                      Number.isFinite(step.waitMs) ? step.waitMs : defaultWaitMs,
+                    )}
                   </span>
                   <span className='text-steel-400'>
                     result {result.result ?? 'N/A'}

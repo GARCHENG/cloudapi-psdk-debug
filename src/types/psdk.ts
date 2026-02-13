@@ -88,6 +88,7 @@ export interface CommandSequenceStep {
   method: PsdkCommandMethod
   data: Record<string, unknown>
   summary: string
+  waitMs: number
 }
 
 export type SequenceRunStatus =
