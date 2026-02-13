@@ -261,13 +261,11 @@ function App() {
 
       removePendingCommand(tid);
 
-      let didTimeout = false;
       setCommandLogs((prev) => {
         const idx = prev.findIndex((entry) => entry.tid === tid);
         if (idx === -1) return prev;
         if (prev[idx].status !== "pending") return prev;
 
-        didTimeout = true;
         const updated = [...prev];
         updated[idx] = {
           ...updated[idx],
@@ -276,14 +274,12 @@ function App() {
         return updated;
       });
 
-      if (didTimeout) {
-        pushFeedback({
-          tid,
-          method: pendingCommand.method ?? method,
-          status: "timeout",
-        });
-        resolveAwaiter(tid, { status: "timeout", tid });
-      }
+      pushFeedback({
+        tid,
+        method: pendingCommand.method ?? method,
+        status: "timeout",
+      });
+      resolveAwaiter(tid, { status: "timeout", tid });
     },
     [pushFeedback, removePendingCommand, resolveAwaiter],
   );
