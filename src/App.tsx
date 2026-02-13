@@ -12,9 +12,13 @@ import {
   type CommandFeedback,
   type CommandFeedbackStatus,
   type CommandLogEntry,
+  type CommandSequenceStep,
   type FloatingWindowData,
   type PsdkCommandMethod,
   type PsdkStatePayload,
+  type SequenceRunStatus,
+  type SequenceStepResult,
+  type SequenceStepStatus,
   type ServiceReplyData,
   type SpeakerCommandMethod,
   type SpeakerPlayProgressData,
@@ -22,6 +26,7 @@ import {
   buildBaseMessage,
 } from "./types/psdk";
 import { CommandResultsPanel } from "./components/app/CommandResultsPanel";
+import { CommandSequencePanel } from "./components/app/CommandSequencePanel";
 import { ConnectionPanel } from "./components/app/ConnectionPanel";
 import { FloatingWindowPanel } from "./components/app/FloatingWindowPanel";
 import { PsdkStatePanel } from "./components/app/PsdkStatePanel";
@@ -89,6 +94,8 @@ interface TimeoutMeta {
   method: PsdkCommandMethod;
 }
 
+type CommandAwaiter = (result: SequenceStepResult) => void;
+
 function App() {
   const [mqttEnabled, setMqttEnabled] = useState(false);
   const [brokerUrl, setBrokerUrl] = useState(
@@ -132,11 +139,23 @@ function App() {
   const [commandFeedbacks, setCommandFeedbacks] = useState<CommandFeedback[]>(
     [],
   );
+  const [sequenceSteps, setSequenceSteps] = useState<CommandSequenceStep[]>([]);
+  const [sequenceResults, setSequenceResults] = useState<SequenceStepResult[]>([]);
+  const [sequenceStatus, setSequenceStatus] =
+    useState<SequenceRunStatus>("idle");
+  const [sequenceActiveIndex, setSequenceActiveIndex] = useState<number | null>(
+    null,
+  );
+  const [sequenceError, setSequenceError] = useState<string | null>(null);
+  const [stopRequested, setStopRequested] = useState(false);
   const [logModalOpen, setLogModalOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const pendingCommandsRef = useRef<Map<string, PendingCommand>>(new Map());
   const feedbackTimerRef = useRef<Map<string, number>>(new Map());
   const commandTimeoutRef = useRef<Map<string, number>>(new Map());
+  const commandAwaitersRef = useRef<Map<string, CommandAwaiter>>(new Map());
+  const sequenceRunIdRef = useRef<string | null>(null);
+  const stopRequestedRef = useRef(false);
 
   const clientId = useMemo(() => `psdk-debug-${createId()}`, []);
 
@@ -194,6 +213,16 @@ function App() {
     [clearCommandTimeout],
   );
 
+  const resolveAwaiter = useCallback(
+    (tid: string, result: SequenceStepResult) => {
+      const awaiter = commandAwaitersRef.current.get(tid);
+      if (!awaiter) return;
+      commandAwaitersRef.current.delete(tid);
+      awaiter(result);
+    },
+    [],
+  );
+
   const pushFeedback = useCallback(
     (params: Pick<CommandFeedback, "tid" | "method" | "status" | "result">) => {
       const id = createId();
@@ -240,9 +269,10 @@ function App() {
           method: pendingCommand.method ?? method,
           status: "timeout",
         });
+        resolveAwaiter(tid, { status: "timeout", tid });
       }
     },
-    [pushFeedback, removePendingCommand],
+    [pushFeedback, removePendingCommand, resolveAwaiter],
   );
 
   useEffect(
@@ -251,6 +281,7 @@ function App() {
         window.clearTimeout(timeoutId);
       });
       commandTimeoutRef.current.clear();
+      commandAwaitersRef.current.clear();
 
       feedbackTimerRef.current.forEach((timer) => {
         window.clearTimeout(timer);
@@ -302,6 +333,10 @@ function App() {
         return updated;
       });
 
+      if (tid) {
+        resolveAwaiter(tid, { status: nextStatus, result, tid });
+      }
+
       if (tid && pendingCommand) {
         pushFeedback({
           tid,
@@ -311,7 +346,7 @@ function App() {
         });
       }
     },
-    [pushFeedback, removePendingCommand],
+    [pushFeedback, removePendingCommand, resolveAwaiter],
   );
 
   const updateLogFromProgress = useCallback(
@@ -517,23 +552,45 @@ function App() {
     deviceSn.trim().length > 0;
 
   const connectionCollapsed = status === "connected";
-  const canSend = isConnected;
+  const sequenceRunning = sequenceStatus === "running";
+  const canSend = isConnected && !sequenceRunning;
 
-  const sendCommand = useCallback(
-    (method: PsdkCommandMethod, data: Record<string, unknown>) => {
-      if (onlineState !== "online") {
-        window.alert("PSDK 不在线，请确认设备在线后再下发指令。");
-        return;
-      }
+  const dispatchCommand = useCallback(
+    (
+      method: PsdkCommandMethod,
+      data: Record<string, unknown>,
+      options?: {
+        skipChecks?: boolean;
+        onBeforePublish?: (tid: string) => void;
+      },
+    ) => {
+      const skipChecks = options?.skipChecks ?? false;
 
-      if (!isConnected) {
-        window.alert("MQTT 未连接，请先连接后再下发指令。");
-        return;
+      if (!skipChecks) {
+        if (sequenceRunning) {
+          window.alert(
+            "Sequence running. Please wait for it to finish before sending manual commands.",
+          );
+          return null;
+        }
+        if (onlineState !== "online") {
+          window.alert(
+            "PSDK is offline. Please confirm the device is online before sending commands.",
+          );
+          return null;
+        }
+
+        if (!isConnected) {
+          window.alert("MQTT not connected. Please connect before sending.");
+          return null;
+        }
       }
 
       if (!servicesTopic) {
-        window.alert("缺少 Gateway SN，无法下发指令。");
-        return;
+        if (!skipChecks) {
+          window.alert("Missing Gateway SN. Unable to send commands.");
+        }
+        return null;
       }
 
       const message = buildBaseMessage(method, data);
@@ -561,9 +618,42 @@ function App() {
         };
         return [entry, ...prev].slice(0, MAX_LOGS);
       });
+
+      options?.onBeforePublish?.(message.tid);
       publish(servicesTopic, payload);
+      return message.tid;
     },
-    [isConnected, markCommandTimeout, onlineState, publish, servicesTopic],
+    [
+      isConnected,
+      markCommandTimeout,
+      onlineState,
+      publish,
+      sequenceRunning,
+      servicesTopic,
+    ],
+  );
+
+  const sendCommand = useCallback(
+    (method: PsdkCommandMethod, data: Record<string, unknown>) => {
+      dispatchCommand(method, data);
+    },
+    [dispatchCommand],
+  );
+
+  const sendCommandWithAck = useCallback(
+    (method: PsdkCommandMethod, data: Record<string, unknown>) =>
+      new Promise<SequenceStepResult>((resolve) => {
+        const tid = dispatchCommand(method, data, {
+          skipChecks: true,
+          onBeforePublish: (nextTid) => {
+            commandAwaitersRef.current.set(nextTid, resolve);
+          },
+        });
+        if (!tid) {
+          resolve({ status: "failure" });
+        }
+      }),
+    [dispatchCommand],
   );
 
   const pendingCommandSet = useMemo(() => {
@@ -677,6 +767,413 @@ function App() {
     inputBoxText.trim().length > 0 && inputBoxTextBytes <= 128;
   const widgetIndexValid = Number.isInteger(widgetIndex) && widgetIndex >= 0;
   const widgetValueValid = Number.isInteger(widgetValue);
+
+  const formatSummaryValue = useCallback((value: string, max = 24) => {
+    const normalized = value.replace(/\s+/g, " ").trim();
+    if (!normalized) return "N/A";
+    if (normalized.length <= max) return normalized;
+    return `${normalized.slice(0, max)}...`;
+  }, []);
+
+  const buildStepData = useCallback(
+    (method: PsdkCommandMethod) => {
+      switch (method) {
+        case "speaker_audio_play_start":
+          if (!audioValid) return null;
+          return {
+            psdk_index: psdkIndex,
+            file: {
+              format: "pcm",
+              md5: audioMd5,
+              name: audioName,
+              url: audioUrl,
+            },
+          };
+        case "speaker_tts_play_start":
+          if (!ttsValid) return null;
+          return {
+            psdk_index: psdkIndex,
+            tts: {
+              md5: ttsMd5,
+              name: ttsName,
+              text: ttsText,
+            },
+          };
+        case "speaker_replay":
+          return { psdk_index: psdkIndex };
+        case "speaker_play_stop":
+          return { psdk_index: psdkIndex };
+        case "speaker_play_mode_set":
+          return {
+            psdk_index: psdkIndex,
+            play_mode: playMode,
+          };
+        case "speaker_play_volume_set":
+          return {
+            psdk_index: psdkIndex,
+            play_volume: playVolume,
+          };
+        case "psdk_input_box_text_set":
+          if (!inputBoxTextValid) return null;
+          return {
+            psdk_index: psdkIndex,
+            value: inputBoxText,
+          };
+        case "psdk_widget_value_set":
+          if (!widgetIndexValid || !widgetValueValid) return null;
+          return {
+            psdk_index: psdkIndex,
+            index: widgetIndex,
+            value: widgetValue,
+          };
+        default:
+          return null;
+      }
+    },
+    [
+      audioMd5,
+      audioName,
+      audioUrl,
+      audioValid,
+      inputBoxText,
+      inputBoxTextValid,
+      playMode,
+      playVolume,
+      psdkIndex,
+      ttsMd5,
+      ttsName,
+      ttsText,
+      ttsValid,
+      widgetIndex,
+      widgetIndexValid,
+      widgetValue,
+      widgetValueValid,
+    ],
+  );
+
+  const buildStepSummary = useCallback(
+    (method: PsdkCommandMethod, data: Record<string, unknown>) => {
+      switch (method) {
+        case "speaker_audio_play_start": {
+          const payload = data as {
+            psdk_index?: number;
+            file?: { name?: string; url?: string; md5?: string };
+          };
+          const name = payload.file?.name ?? "";
+          const url = payload.file?.url ?? "";
+          const md5 = payload.file?.md5 ?? "";
+          return `psdk=${payload.psdk_index ?? "N/A"} | name=${formatSummaryValue(
+            name,
+            18,
+          )} | url=${formatSummaryValue(url, 20)} | md5=${formatSummaryValue(
+            md5,
+            12,
+          )}`;
+        }
+        case "speaker_tts_play_start": {
+          const payload = data as {
+            psdk_index?: number;
+            tts?: { name?: string; text?: string; md5?: string };
+          };
+          const name = payload.tts?.name ?? "";
+          const text = payload.tts?.text ?? "";
+          const md5 = payload.tts?.md5 ?? "";
+          return `psdk=${payload.psdk_index ?? "N/A"} | name=${formatSummaryValue(
+            name,
+            18,
+          )} | text=${formatSummaryValue(text, 20)} | md5=${formatSummaryValue(
+            md5,
+            12,
+          )}`;
+        }
+        case "speaker_replay": {
+          const payload = data as { psdk_index?: number };
+          return `psdk=${payload.psdk_index ?? "N/A"}`;
+        }
+        case "speaker_play_stop": {
+          const payload = data as { psdk_index?: number };
+          return `psdk=${payload.psdk_index ?? "N/A"}`;
+        }
+        case "speaker_play_mode_set": {
+          const payload = data as { psdk_index?: number; play_mode?: number };
+          return `psdk=${payload.psdk_index ?? "N/A"} | mode=${
+            payload.play_mode ?? "N/A"
+          }`;
+        }
+        case "speaker_play_volume_set": {
+          const payload = data as {
+            psdk_index?: number;
+            play_volume?: number;
+          };
+          return `psdk=${payload.psdk_index ?? "N/A"} | volume=${
+            payload.play_volume ?? "N/A"
+          }`;
+        }
+        case "psdk_input_box_text_set": {
+          const payload = data as { psdk_index?: number; value?: string };
+          return `psdk=${payload.psdk_index ?? "N/A"} | value=${formatSummaryValue(
+            payload.value ?? "",
+            28,
+          )}`;
+        }
+        case "psdk_widget_value_set": {
+          const payload = data as {
+            psdk_index?: number;
+            index?: number;
+            value?: number;
+          };
+          const sourceLabel = widgetConfigSourceType
+            ? ` | source=${widgetConfigSourceType}`
+            : "";
+          return `psdk=${payload.psdk_index ?? "N/A"} | index=${
+            payload.index ?? "N/A"
+          } | value=${payload.value ?? "N/A"}${sourceLabel}`;
+        }
+        default:
+          return "N/A";
+      }
+    },
+    [formatSummaryValue, widgetConfigSourceType],
+  );
+
+  const resetSequenceMeta = useCallback(() => {
+    setSequenceResults([]);
+    setSequenceStatus("idle");
+    setSequenceActiveIndex(null);
+    setSequenceError(null);
+    setStopRequested(false);
+    stopRequestedRef.current = false;
+  }, []);
+
+  const addSequenceStep = useCallback(
+    (method: PsdkCommandMethod) => {
+      if (sequenceRunning) return;
+      const data = buildStepData(method);
+      if (!data) return;
+      const summary = buildStepSummary(method, data);
+      setSequenceSteps((prev) => [
+        ...prev,
+        {
+          id: createId(),
+          method,
+          data,
+          summary,
+        },
+      ]);
+      resetSequenceMeta();
+    },
+    [buildStepData, buildStepSummary, resetSequenceMeta, sequenceRunning],
+  );
+
+  const moveSequenceStep = useCallback(
+    (index: number, direction: "up" | "down") => {
+      if (sequenceRunning) return;
+      setSequenceSteps((prev) => {
+        const nextIndex = direction === "up" ? index - 1 : index + 1;
+        if (nextIndex < 0 || nextIndex >= prev.length) return prev;
+        const next = [...prev];
+        const temp = next[index];
+        next[index] = next[nextIndex];
+        next[nextIndex] = temp;
+        return next;
+      });
+      resetSequenceMeta();
+    },
+    [resetSequenceMeta, sequenceRunning],
+  );
+
+  const removeSequenceStep = useCallback(
+    (index: number) => {
+      if (sequenceRunning) return;
+      setSequenceSteps((prev) => prev.filter((_, idx) => idx !== index));
+      resetSequenceMeta();
+    },
+    [resetSequenceMeta, sequenceRunning],
+  );
+
+  const clearSequenceSteps = useCallback(() => {
+    if (sequenceRunning) return;
+    setSequenceSteps([]);
+    resetSequenceMeta();
+  }, [resetSequenceMeta, sequenceRunning]);
+
+  const runSequence = useCallback(async () => {
+    if (sequenceRunning) return;
+
+    if (sequenceSteps.length === 0) {
+      window.alert("Sequence is empty. Please add steps first.");
+      return;
+    }
+
+    if (onlineState !== "online") {
+      window.alert(
+        "PSDK is offline. Please confirm the device is online before running.",
+      );
+      return;
+    }
+
+    if (!isConnected) {
+      window.alert("MQTT not connected. Please connect before running.");
+      return;
+    }
+
+    if (!servicesTopic) {
+      window.alert("Missing Gateway SN. Unable to run sequence.");
+      return;
+    }
+
+    const stepsSnapshot = [...sequenceSteps];
+    const runId = createId();
+    sequenceRunIdRef.current = runId;
+    stopRequestedRef.current = false;
+    setStopRequested(false);
+    setSequenceError(null);
+    setSequenceStatus("running");
+    setSequenceActiveIndex(null);
+    setSequenceResults(
+      stepsSnapshot.map(() => ({ status: "idle" as SequenceStepStatus })),
+    );
+
+    const updateResult = (index: number, result: SequenceStepResult) => {
+      setSequenceResults((prev) => {
+        const base =
+          prev.length === stepsSnapshot.length
+            ? [...prev]
+            : stepsSnapshot.map(() => ({
+                status: "idle" as SequenceStepStatus,
+              }));
+        base[index] = { ...base[index], ...result };
+        return base;
+      });
+    };
+
+    const markSkipped = (fromIndex: number) => {
+      setSequenceResults((prev) => {
+        const base =
+          prev.length === stepsSnapshot.length
+            ? [...prev]
+            : stepsSnapshot.map(() => ({
+                status: "idle" as SequenceStepStatus,
+              }));
+        for (let idx = fromIndex; idx < stepsSnapshot.length; idx += 1) {
+          base[idx] = { status: "skipped" };
+        }
+        return base;
+      });
+    };
+
+    for (let index = 0; index < stepsSnapshot.length; index += 1) {
+      if (sequenceRunIdRef.current !== runId) return;
+
+      if (stopRequestedRef.current) {
+        setSequenceStatus("stopped");
+        setSequenceActiveIndex(null);
+        markSkipped(index);
+        setStopRequested(false);
+        stopRequestedRef.current = false;
+        return;
+      }
+
+      setSequenceActiveIndex(index);
+      updateResult(index, { status: "pending" });
+
+      const result = await sendCommandWithAck(
+        stepsSnapshot[index].method,
+        stepsSnapshot[index].data,
+      );
+
+      if (sequenceRunIdRef.current !== runId) return;
+
+      updateResult(index, result);
+
+      if (result.status !== "success") {
+        const stepMethod = stepsSnapshot[index]?.method ?? "unknown";
+        const failureMessage =
+          result.status === "timeout"
+            ? `Step ${index + 1} (${stepMethod}) timed out (10s).`
+            : `Step ${index + 1} (${stepMethod}) failed (result ${
+                result.result ?? "N/A"
+              }).`;
+        setSequenceError(failureMessage);
+        setSequenceStatus("failure");
+        setSequenceActiveIndex(null);
+        markSkipped(index + 1);
+        setStopRequested(false);
+        stopRequestedRef.current = false;
+        return;
+      }
+
+      if (stopRequestedRef.current) {
+        setSequenceStatus("stopped");
+        setSequenceActiveIndex(null);
+        markSkipped(index + 1);
+        setStopRequested(false);
+        stopRequestedRef.current = false;
+        return;
+      }
+    }
+
+    setSequenceStatus("success");
+    setSequenceActiveIndex(null);
+    setSequenceError(null);
+    setStopRequested(false);
+    stopRequestedRef.current = false;
+  }, [
+    isConnected,
+    onlineState,
+    sendCommandWithAck,
+    sequenceRunning,
+    sequenceSteps,
+    servicesTopic,
+  ]);
+
+  const stopSequence = useCallback(() => {
+    if (!sequenceRunning) return;
+    stopRequestedRef.current = true;
+    setStopRequested(true);
+  }, [sequenceRunning]);
+
+  const handleQueuePlayModeSet = useCallback(
+    () => addSequenceStep("speaker_play_mode_set"),
+    [addSequenceStep],
+  );
+
+  const handleQueueVolumeSet = useCallback(
+    () => addSequenceStep("speaker_play_volume_set"),
+    [addSequenceStep],
+  );
+
+  const handleQueueReplay = useCallback(
+    () => addSequenceStep("speaker_replay"),
+    [addSequenceStep],
+  );
+
+  const handleQueueStop = useCallback(
+    () => addSequenceStep("speaker_play_stop"),
+    [addSequenceStep],
+  );
+
+  const handleQueueAudioPlayStart = useCallback(
+    () => addSequenceStep("speaker_audio_play_start"),
+    [addSequenceStep],
+  );
+
+  const handleQueueTtsPlayStart = useCallback(
+    () => addSequenceStep("speaker_tts_play_start"),
+    [addSequenceStep],
+  );
+
+  const handleQueueInputBoxTextSet = useCallback(
+    () => addSequenceStep("psdk_input_box_text_set"),
+    [addSequenceStep],
+  );
+
+  const handleQueueWidgetValueSet = useCallback(
+    () => addSequenceStep("psdk_widget_value_set"),
+    [addSequenceStep],
+  );
+
+  const canRunSequence = sequenceSteps.length > 0 && !sequenceRunning;
 
   return (
     <div className="min-h-screen">
@@ -802,6 +1299,30 @@ function App() {
           handleWidgetValueSet={handleWidgetValueSet}
           widgetConfigSourceType={widgetConfigSourceType}
           setWidgetConfigSourceType={setWidgetConfigSourceType}
+          sequenceLocked={sequenceRunning}
+          handleQueuePlayModeSet={handleQueuePlayModeSet}
+          handleQueueVolumeSet={handleQueueVolumeSet}
+          handleQueueReplay={handleQueueReplay}
+          handleQueueStop={handleQueueStop}
+          handleQueueAudioPlayStart={handleQueueAudioPlayStart}
+          handleQueueTtsPlayStart={handleQueueTtsPlayStart}
+          handleQueueInputBoxTextSet={handleQueueInputBoxTextSet}
+          handleQueueWidgetValueSet={handleQueueWidgetValueSet}
+        />
+
+        <CommandSequencePanel
+          steps={sequenceSteps}
+          results={sequenceResults}
+          status={sequenceStatus}
+          activeIndex={sequenceActiveIndex}
+          stopRequested={stopRequested}
+          errorMessage={sequenceError ?? undefined}
+          canRun={canRunSequence}
+          onRun={runSequence}
+          onStop={stopSequence}
+          onClear={clearSequenceSteps}
+          onMoveStep={moveSequenceStep}
+          onRemoveStep={removeSequenceStep}
         />
 
         <CommandResultsPanel

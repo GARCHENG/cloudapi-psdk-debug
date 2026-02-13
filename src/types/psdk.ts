@@ -83,6 +83,34 @@ export interface CommandLogEntry {
   playProgress?: CommandPlayProgress
 }
 
+export interface CommandSequenceStep {
+  id: string
+  method: PsdkCommandMethod
+  data: Record<string, unknown>
+  summary: string
+}
+
+export type SequenceRunStatus =
+  | 'idle'
+  | 'running'
+  | 'success'
+  | 'failure'
+  | 'stopped'
+
+export type SequenceStepStatus =
+  | 'idle'
+  | 'pending'
+  | 'success'
+  | 'failure'
+  | 'timeout'
+  | 'skipped'
+
+export interface SequenceStepResult {
+  status: SequenceStepStatus
+  tid?: string
+  result?: number
+}
+
 export interface SpeakerFile {
   format: 'pcm'
   md5: string
