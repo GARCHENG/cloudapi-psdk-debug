@@ -1,4 +1,5 @@
 import { type ChangeEvent, useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { SectionHeader } from './ui'
 import {
   buildWidgetActions,
@@ -376,7 +377,7 @@ export const WidgetValueExampleModal = ({
   const isBuiltinLoading =
     !isCustomSource && loadingBuiltinType !== null && loadingBuiltinType === sourceType
 
-  return (
+  return createPortal(
     <div
       className='fixed inset-0 z-50 flex items-center justify-center bg-coal-950/75 px-4 py-6'
       onClick={onClose}
@@ -604,6 +605,7 @@ export const WidgetValueExampleModal = ({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

@@ -59,15 +59,6 @@ interface SpeakerControlPanelProps {
   handleWidgetValueSet: () => void;
   widgetConfigSourceType: string;
   setWidgetConfigSourceType: (value: string) => void;
-  sequenceLocked: boolean;
-  handleQueuePlayModeSet: () => void;
-  handleQueueVolumeSet: () => void;
-  handleQueueReplay: () => void;
-  handleQueueStop: () => void;
-  handleQueueAudioPlayStart: () => void;
-  handleQueueTtsPlayStart: () => void;
-  handleQueueInputBoxTextSet: () => void;
-  handleQueueWidgetValueSet: () => void;
 }
 
 export const SpeakerControlPanel = ({
@@ -122,15 +113,6 @@ export const SpeakerControlPanel = ({
   handleWidgetValueSet,
   widgetConfigSourceType,
   setWidgetConfigSourceType,
-  sequenceLocked,
-  handleQueuePlayModeSet,
-  handleQueueVolumeSet,
-  handleQueueReplay,
-  handleQueueStop,
-  handleQueueAudioPlayStart,
-  handleQueueTtsPlayStart,
-  handleQueueInputBoxTextSet,
-  handleQueueWidgetValueSet,
 }: SpeakerControlPanelProps) => {
   const [widgetExampleModalOpen, setWidgetExampleModalOpen] = useState(false)
   const [widgetExampleDeviceType, setWidgetExampleDeviceType] = useState('')
@@ -247,14 +229,6 @@ export const SpeakerControlPanel = ({
                   "Apply Mode"
                 )}
               </button>
-              <button
-                className="btn"
-                onClick={handleQueuePlayModeSet}
-                disabled={sequenceLocked}
-                type="button"
-              >
-                Add to Sequence
-              </button>
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <input
@@ -288,14 +262,6 @@ export const SpeakerControlPanel = ({
                   "Apply Volume"
                 )}
               </button>
-              <button
-                className="btn"
-                onClick={handleQueueVolumeSet}
-                disabled={sequenceLocked}
-                type="button"
-              >
-                Add to Sequence
-              </button>
             </div>
           </div>
         </div>
@@ -321,14 +287,6 @@ export const SpeakerControlPanel = ({
               )}
             </button>
             <button
-              className="btn"
-              onClick={handleQueueReplay}
-              disabled={sequenceLocked}
-              type="button"
-            >
-              Add to Sequence
-            </button>
-            <button
               className="btn btn-danger"
               onClick={handleStop}
               disabled={!canSend || pendingStop}
@@ -342,14 +300,6 @@ export const SpeakerControlPanel = ({
               ) : (
                 "Stop"
               )}
-            </button>
-            <button
-              className="btn"
-              onClick={handleQueueStop}
-              disabled={sequenceLocked}
-              type="button"
-            >
-              Add to Sequence
             </button>
           </div>
         </div>
@@ -398,14 +348,6 @@ export const SpeakerControlPanel = ({
                   "Send Audio Play Start"
                 )}
               </button>
-              <button
-                className="btn"
-                onClick={handleQueueAudioPlayStart}
-                disabled={!audioValid || sequenceLocked}
-                type="button"
-              >
-                Add to Sequence
-              </button>
             </div>
           </div>
         </div>
@@ -449,14 +391,6 @@ export const SpeakerControlPanel = ({
                   "Send TTS Play Start"
                 )}
               </button>
-              <button
-                className="btn"
-                onClick={handleQueueTtsPlayStart}
-                disabled={!ttsValid || sequenceLocked}
-                type="button"
-              >
-                Add to Sequence
-              </button>
             </div>
           </div>
         </div>
@@ -493,14 +427,6 @@ export const SpeakerControlPanel = ({
                 ) : (
                   "Set Input Box Text"
                 )}
-              </button>
-              <button
-                className="btn"
-                onClick={handleQueueInputBoxTextSet}
-                disabled={!inputBoxTextValid || sequenceLocked}
-                type="button"
-              >
-                Add to Sequence
               </button>
             </div>
           </div>
@@ -580,16 +506,6 @@ export const SpeakerControlPanel = ({
                 ) : (
                   "Set Widget Value"
                 )}
-              </button>
-              <button
-                className="btn"
-                onClick={handleQueueWidgetValueSet}
-                disabled={
-                  !widgetIndexValid || !widgetValueValid || sequenceLocked
-                }
-                type="button"
-              >
-                Add to Sequence
               </button>
             </div>
           </div>

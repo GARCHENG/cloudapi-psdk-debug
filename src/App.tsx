@@ -946,9 +946,9 @@ function App() {
   }, []);
 
   const addSequenceStep = useCallback(
-    (method: PsdkCommandMethod) => {
+    (method: PsdkCommandMethod, dataOverride?: Record<string, unknown>) => {
       if (sequenceRunning) return;
-      const data = buildStepData(method);
+      const data = dataOverride ?? buildStepData(method);
       if (!data) return;
       const summary = buildStepSummary(method, data);
       setSequenceSteps((prev) => [
@@ -1133,44 +1133,35 @@ function App() {
     setStopRequested(true);
   }, [sequenceRunning]);
 
-  const handleQueuePlayModeSet = useCallback(
-    () => addSequenceStep("speaker_play_mode_set"),
-    [addSequenceStep],
-  );
-
-  const handleQueueVolumeSet = useCallback(
-    () => addSequenceStep("speaker_play_volume_set"),
-    [addSequenceStep],
-  );
-
-  const handleQueueReplay = useCallback(
-    () => addSequenceStep("speaker_replay"),
-    [addSequenceStep],
-  );
-
-  const handleQueueStop = useCallback(
-    () => addSequenceStep("speaker_play_stop"),
-    [addSequenceStep],
-  );
-
-  const handleQueueAudioPlayStart = useCallback(
-    () => addSequenceStep("speaker_audio_play_start"),
-    [addSequenceStep],
-  );
-
-  const handleQueueTtsPlayStart = useCallback(
-    () => addSequenceStep("speaker_tts_play_start"),
-    [addSequenceStep],
-  );
-
-  const handleQueueInputBoxTextSet = useCallback(
-    () => addSequenceStep("psdk_input_box_text_set"),
-    [addSequenceStep],
-  );
-
-  const handleQueueWidgetValueSet = useCallback(
-    () => addSequenceStep("psdk_widget_value_set"),
-    [addSequenceStep],
+  const sequenceDefaults = useMemo(
+    () => ({
+      psdkIndex,
+      playMode,
+      playVolume,
+      audioName,
+      audioUrl,
+      audioMd5,
+      ttsName,
+      ttsText,
+      ttsMd5,
+      inputBoxText,
+      widgetIndex,
+      widgetValue,
+    }),
+    [
+      audioMd5,
+      audioName,
+      audioUrl,
+      inputBoxText,
+      playMode,
+      playVolume,
+      psdkIndex,
+      ttsMd5,
+      ttsName,
+      ttsText,
+      widgetIndex,
+      widgetValue,
+    ],
   );
 
   const canRunSequence = sequenceSteps.length > 0 && !sequenceRunning;
@@ -1299,15 +1290,6 @@ function App() {
           handleWidgetValueSet={handleWidgetValueSet}
           widgetConfigSourceType={widgetConfigSourceType}
           setWidgetConfigSourceType={setWidgetConfigSourceType}
-          sequenceLocked={sequenceRunning}
-          handleQueuePlayModeSet={handleQueuePlayModeSet}
-          handleQueueVolumeSet={handleQueueVolumeSet}
-          handleQueueReplay={handleQueueReplay}
-          handleQueueStop={handleQueueStop}
-          handleQueueAudioPlayStart={handleQueueAudioPlayStart}
-          handleQueueTtsPlayStart={handleQueueTtsPlayStart}
-          handleQueueInputBoxTextSet={handleQueueInputBoxTextSet}
-          handleQueueWidgetValueSet={handleQueueWidgetValueSet}
         />
 
         <CommandSequencePanel
@@ -1317,12 +1299,14 @@ function App() {
           activeIndex={sequenceActiveIndex}
           stopRequested={stopRequested}
           errorMessage={sequenceError ?? undefined}
+          defaults={sequenceDefaults}
           canRun={canRunSequence}
           onRun={runSequence}
           onStop={stopSequence}
           onClear={clearSequenceSteps}
           onMoveStep={moveSequenceStep}
           onRemoveStep={removeSequenceStep}
+          onAddStep={addSequenceStep}
         />
 
         <CommandResultsPanel

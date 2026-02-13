@@ -1,11 +1,17 @@
+import { useState } from 'react'
 import { InlineSpinner, SectionHeader } from './ui'
 import {
   commandStatusTone,
   COMMAND_METHOD_LABELS,
   formatShortTid,
 } from './view-helpers'
+import {
+  CommandSequenceAddModal,
+  type CommandSequenceDefaults,
+} from './CommandSequenceAddModal'
 import type {
   CommandSequenceStep,
+  PsdkCommandMethod,
   SequenceRunStatus,
   SequenceStepResult,
   SequenceStepStatus,
@@ -18,12 +24,14 @@ interface CommandSequencePanelProps {
   activeIndex: number | null
   stopRequested: boolean
   errorMessage?: string
+  defaults: CommandSequenceDefaults
   canRun: boolean
   onRun: () => void
   onStop: () => void
   onClear: () => void
   onMoveStep: (index: number, direction: 'up' | 'down') => void
   onRemoveStep: (index: number) => void
+  onAddStep: (method: PsdkCommandMethod, data: Record<string, unknown>) => void
 }
 
 const getStepTone = (status: SequenceStepStatus) => {
@@ -44,14 +52,18 @@ export const CommandSequencePanel = ({
   activeIndex,
   stopRequested,
   errorMessage,
+  defaults,
   canRun,
   onRun,
   onStop,
   onClear,
   onMoveStep,
   onRemoveStep,
+  onAddStep,
 }: CommandSequencePanelProps) => {
   const sequenceLocked = status === 'running'
+  const [addOpen, setAddOpen] = useState(false)
+  const addModalOpen = addOpen && !sequenceLocked
 
   const failureSummary = (() => {
     if (status !== 'failure') return null
@@ -96,7 +108,21 @@ export const CommandSequencePanel = ({
       <div className='flex flex-wrap items-start justify-between gap-4'>
         <SectionHeader title='Command Sequence' subtitle='services_reply' />
         <div className='flex flex-wrap items-center gap-2'>
-          <button className='btn btn-primary' onClick={onRun} disabled={!canRun}>
+          <button
+            className='btn'
+            onClick={() => setAddOpen(true)}
+            disabled={sequenceLocked}
+          >
+            Add Control
+          </button>
+          <button
+            className='btn btn-primary'
+            onClick={() => {
+              setAddOpen(false)
+              onRun()
+            }}
+            disabled={!canRun}
+          >
             Run Sequence
           </button>
           <button
@@ -127,7 +153,7 @@ export const CommandSequencePanel = ({
       <div className='mt-5 space-y-3'>
         {steps.length === 0 ? (
           <div className='rounded-lg border border-dashed border-steel-700/60 bg-coal-900/35 px-4 py-6 text-sm text-steel-400'>
-            No sequence steps yet. Use "Add to Sequence" to build a run.
+            No sequence steps yet. Use "Add Control" to build a run.
           </div>
         ) : (
           steps.map((step, index) => {
@@ -201,6 +227,16 @@ export const CommandSequencePanel = ({
           })
         )}
       </div>
+
+      {addModalOpen && (
+        <CommandSequenceAddModal
+          locked={sequenceLocked}
+          defaults={defaults}
+          onAddStep={onAddStep}
+          onClose={() => setAddOpen(false)}
+        />
+      )}
+
     </section>
   )
 }
