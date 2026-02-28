@@ -176,7 +176,7 @@ export const CommandSequenceAddModal = ({
         onClick={(event) => event.stopPropagation()}
       >
         <div className='flex flex-wrap items-start justify-between gap-4'>
-          <SectionHeader title='Add Control' subtitle='Quick Add' />
+          <SectionHeader title='Add Sequence Step' subtitle='Sequence Builder' />
           <button className='btn btn-danger' onClick={onClose} type='button'>
             Close
           </button>
@@ -207,7 +207,7 @@ export const CommandSequenceAddModal = ({
           <div className='rounded-xl border border-steel-700/45 bg-coal-900/60 p-4'>
             {!selectedMethod ? (
               <div className='rounded-lg border border-dashed border-steel-700/60 bg-coal-900/35 px-4 py-6 text-sm text-steel-400'>
-                Select a command to configure its parameters.
+                Select a command to configure its parameters and add a step card.
               </div>
             ) : (
               <div className='space-y-4'>
@@ -486,14 +486,14 @@ export const CommandSequenceAddModal = ({
                     }}
                     type='button'
                   >
-                    Add Step
+                    Add To Sequence
                   </button>
                   <button
                     className='btn'
                     onClick={() => setSelectedMethod(null)}
                     type='button'
                   >
-                    Back
+                    Choose Another
                   </button>
                 </div>
               </div>

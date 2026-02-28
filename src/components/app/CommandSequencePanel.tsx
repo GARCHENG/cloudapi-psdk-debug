@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { InlineSpinner, SectionHeader } from './ui'
 import {
   commandStatusTone,
@@ -69,6 +69,60 @@ const formatWaitLabel = (waitMs: number) => {
   return Number.isInteger(seconds) ? `${seconds}s` : `${seconds.toFixed(1)}s`
 }
 
+const getRunStatusTone = (status: SequenceRunStatus) => {
+  if (status === 'running') return 'border-amber-500/60 bg-amber-500/10 text-amber-400'
+  if (status === 'success') return 'border-signal-500/60 bg-signal-500/10 text-signal-400'
+  if (status === 'failure') return 'border-warn-500/60 bg-warn-500/10 text-warn-500'
+  if (status === 'stopped') return 'border-steel-600/60 bg-coal-900/40 text-steel-300'
+  return 'border-steel-600/60 bg-coal-900/40 text-steel-400'
+}
+
+const getRunStatusLabel = (
+  status: SequenceRunStatus,
+  activeIndex: number | null,
+  totalSteps: number,
+  failureSummary: string | null,
+) => {
+  if (status === 'running') {
+    if (activeIndex !== null && totalSteps > 0) {
+      return `Running step ${activeIndex + 1}/${totalSteps}`
+    }
+    return 'Running'
+  }
+  if (status === 'success') return 'Completed successfully'
+  if (status === 'failure') return failureSummary ?? 'Failed'
+  if (status === 'stopped') return 'Stopped by user'
+  return 'Idle'
+}
+
+const getStepCardTone = (status: SequenceStepStatus) => {
+  if (status === 'idle') {
+    return 'border-steel-700/45 bg-coal-900/55'
+  }
+  if (status === 'pending') {
+    return 'border-amber-500/55 bg-amber-500/10'
+  }
+  if (status === 'success') {
+    return 'border-signal-500/45 bg-signal-500/10'
+  }
+  if (status === 'skipped') {
+    return 'border-steel-700/50 bg-coal-900/45'
+  }
+  return 'border-warn-500/45 bg-warn-500/10'
+}
+
+interface DerivedStepViewModel {
+  step: CommandSequenceStep
+  index: number
+  result: SequenceStepResult
+  status: SequenceStepStatus
+  isActive: boolean
+  isWaiting: boolean
+  isFailure: boolean
+  usesDefaultWait: boolean
+  effectiveWaitMs: number
+}
+
 export const CommandSequencePanel = ({
   steps,
   results,
@@ -91,52 +145,81 @@ export const CommandSequencePanel = ({
   const sequenceLocked = status === 'running'
   const [addOpen, setAddOpen] = useState(false)
   const addModalOpen = addOpen && !sequenceLocked
-  const defaultWaitMs = Number.isFinite(defaultWaitSeconds)
-    ? Math.max(0, defaultWaitSeconds) * 1000
-    : DEFAULT_SEQUENCE_WAIT_MS
 
-  const failureSummary = (() => {
-    if (status !== 'failure') return null
-    if (errorMessage) return errorMessage
-    const failedIndex = results.findIndex(
-      (item) => item && (item.status === 'failure' || item.status === 'timeout'),
-    )
-    if (failedIndex === -1) return 'Sequence failed.'
-    const step = steps[failedIndex]
-    if (!step) return 'Sequence failed.'
-    const result = results[failedIndex]
-    const reason =
-      result?.status === 'timeout'
-        ? 'timeout (10s)'
-        : `result ${result?.result ?? 'N/A'}`
-    return `Failed at step ${failedIndex + 1}/${steps.length}: ${COMMAND_METHOD_LABELS[step.method]} (${reason})`
-  })()
+  // UI mapping: overview (run summary), steps (state cards), feedback (failure diagnostics/live badges).
+  const derived = useMemo(() => {
+    const defaultWaitMs = Number.isFinite(defaultWaitSeconds)
+      ? Math.max(0, defaultWaitSeconds) * 1000
+      : DEFAULT_SEQUENCE_WAIT_MS
+    const stepCards: DerivedStepViewModel[] = steps.map((step, index) => {
+      const result = results[index] ?? { status: 'idle' }
+      const resultStatus = result.status
+      const usesDefaultWait = !Number.isFinite(step.waitMs)
+      const effectiveWaitMs = usesDefaultWait ? defaultWaitMs : Math.max(0, step.waitMs)
 
-  const statusLabel = (() => {
-    if (status === 'running') {
-      if (activeIndex !== null && steps.length > 0) {
-        return `Running (step ${activeIndex + 1}/${steps.length})`
+      return {
+        step,
+        index,
+        result,
+        status: resultStatus,
+        isActive: status === 'running' && activeIndex === index,
+        isWaiting: Boolean(waitState && status === 'running' && waitState.index === index),
+        isFailure: resultStatus === 'failure' || resultStatus === 'timeout',
+        usesDefaultWait,
+        effectiveWaitMs,
       }
-      return 'Running'
+    })
+
+    const failedStep = stepCards.find((item) => item.isFailure)
+    const failureSummary = (() => {
+      if (status !== 'failure') return null
+      if (errorMessage) return errorMessage
+      if (!failedStep) return 'Sequence failed.'
+      const reason =
+        failedStep.status === 'timeout'
+          ? 'timeout (10s)'
+          : `result ${failedStep.result.result ?? 'N/A'}`
+      return `Failed at step ${failedStep.index + 1}/${steps.length}: ${COMMAND_METHOD_LABELS[failedStep.step.method]} (${reason})`
+    })()
+
+    const waitCountdownLabel =
+      waitState && status === 'running'
+        ? `Next step in ${formatWaitLabel(waitState.remainingMs)}`
+        : null
+
+    const currentStepLabel =
+      activeIndex !== null && activeIndex >= 0 && activeIndex < steps.length
+        ? `${activeIndex + 1}/${steps.length}`
+        : 'N/A'
+
+    const completedCount = stepCards.filter((item) =>
+      ['success', 'failure', 'timeout', 'skipped'].includes(item.status),
+    ).length
+
+    return {
+      stepCards,
+      failedStep,
+      failureSummary,
+      waitCountdownLabel,
+      currentStepLabel,
+      completedCount,
+      statusLabel: getRunStatusLabel(status, activeIndex, steps.length, failureSummary),
+      statusTone: getRunStatusTone(status),
     }
-    if (status === 'success') return 'Completed successfully'
-    if (status === 'failure') return failureSummary ?? 'Failed'
-    if (status === 'stopped') return 'Stopped by user'
-    return 'Idle'
-  })()
+  }, [activeIndex, defaultWaitSeconds, errorMessage, results, status, steps, waitState])
 
-  const statusTone = (() => {
-    if (status === 'running') return 'border-amber-500/60 bg-amber-500/10 text-amber-400'
-    if (status === 'success') return 'border-signal-500/60 bg-signal-500/10 text-signal-400'
-    if (status === 'failure') return 'border-warn-500/60 bg-warn-500/10 text-warn-500'
-    if (status === 'stopped') return 'border-steel-600/60 bg-coal-900/40 text-steel-300'
-    return 'border-steel-600/60 bg-coal-900/40 text-steel-400'
-  })()
-
-  const waitCountdownLabel = (() => {
-    if (!waitState || status !== 'running') return null
-    const nextStepNumber = Math.min(waitState.index + 2, steps.length)
-    return `Next step in ${formatWaitLabel(waitState.remainingMs)} (step ${nextStepNumber}/${steps.length})`
+  const failureDetails = (() => {
+    if (status !== 'failure' || !derived.failedStep) return null
+    const reason =
+      derived.failedStep.status === 'timeout'
+        ? 'No `services_reply` was received within 10 seconds.'
+        : `Received non-zero result: ${derived.failedStep.result.result ?? 'N/A'}.`
+    return {
+      stepNumber: derived.failedStep.index + 1,
+      methodLabel: COMMAND_METHOD_LABELS[derived.failedStep.step.method],
+      method: derived.failedStep.step.method,
+      reason,
+    }
   })()
 
   const handleDefaultWaitChange = (value: string) => {
@@ -145,56 +228,93 @@ export const CommandSequencePanel = ({
     onDefaultWaitSecondsChange(next)
   }
 
+  const progressPercent =
+    steps.length > 0 ? Math.round((derived.completedCount / steps.length) * 100) : 0
+
   return (
     <section className='panel'>
-      <div className='flex flex-wrap items-start justify-between gap-4'>
+      <div className='flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between'>
         <SectionHeader title='Command Sequence' subtitle='services_reply' />
-        <div className='flex flex-wrap items-center gap-2'>
+        <div className='grid w-full gap-2 sm:grid-cols-2 xl:w-auto xl:grid-cols-4'>
           <button
-            className='btn'
+            className='btn w-full'
             onClick={() => setAddOpen(true)}
             disabled={sequenceLocked}
+            type='button'
           >
-            Add Control
+            Add Step
           </button>
           <button
-            className='btn btn-primary'
+            className='btn btn-primary w-full'
             onClick={() => {
               setAddOpen(false)
               onRun()
             }}
             disabled={!canRun}
+            type='button'
           >
             Run Sequence
           </button>
           <button
-            className='btn btn-danger'
+            className='btn btn-danger w-full'
             onClick={onStop}
             disabled={!sequenceLocked}
+            type='button'
           >
             Stop
           </button>
-          <button className='btn' onClick={onClear} disabled={sequenceLocked}>
-            Clear Steps
+          <button
+            className='btn w-full'
+            onClick={onClear}
+            disabled={sequenceLocked}
+            type='button'
+          >
+            Clear
           </button>
         </div>
       </div>
 
-      <div className='mt-5 rounded-xl border border-steel-700/45 bg-coal-900/50 px-4 py-3 text-sm'>
-        <div className='flex flex-wrap items-center gap-3'>
-          <span className={`chip ${statusTone}`}>{statusLabel}</span>
+      <div className='mt-5 rounded-xl border border-steel-700/45 bg-coal-900/50 p-4'>
+        <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-5'>
+          <div className='rounded-lg border border-steel-700/55 bg-coal-900/55 p-3'>
+            <p className='label m-0'>Total Steps</p>
+            <p className='mt-2 text-lg text-steel-100'>{steps.length}</p>
+          </div>
+          <div className='rounded-lg border border-steel-700/55 bg-coal-900/55 p-3'>
+            <p className='label m-0'>Current Step</p>
+            <p className='mt-2 text-lg text-steel-100'>{derived.currentStepLabel}</p>
+          </div>
+          <div className='rounded-lg border border-steel-700/55 bg-coal-900/55 p-3'>
+            <p className='label m-0'>Progress</p>
+            <p className='mt-2 text-lg text-steel-100'>{progressPercent}%</p>
+          </div>
+          <div className='rounded-lg border border-steel-700/55 bg-coal-900/55 p-3'>
+            <p className='label m-0'>Countdown</p>
+            <p className='mt-2 text-sm text-steel-200'>
+              {derived.waitCountdownLabel ?? 'No wait'}
+            </p>
+          </div>
+          <div className='rounded-lg border border-steel-700/55 bg-coal-900/55 p-3'>
+            <p className='label m-0'>Stop Request</p>
+            <p className='mt-2 text-sm text-steel-200'>
+              {status === 'running' ? (stopRequested ? 'Requested' : 'Ready') : 'N/A'}
+            </p>
+          </div>
+        </div>
+
+        <div className='mt-4 flex flex-wrap items-center gap-2'>
+          <span className={`chip ${derived.statusTone}`}>{derived.statusLabel}</span>
           {stopRequested && status === 'running' && (
             <span className='chip border-amber-500/60 bg-amber-500/10 text-amber-400'>
               Stop requested
             </span>
           )}
-          {waitCountdownLabel && (
+          {derived.waitCountdownLabel && (
             <span className='chip border-steel-600/60 bg-coal-900/40 text-steel-300'>
-              {waitCountdownLabel}
+              {derived.waitCountdownLabel}
             </span>
           )}
-          <span className='text-steel-400'>Steps: {steps.length}</span>
-          <div className='flex flex-wrap items-center gap-2'>
+          <div className='ml-auto flex items-center gap-2'>
             <span className='text-xs text-steel-400'>Default wait (sec)</span>
             <input
               className='input h-8 w-24 text-xs'
@@ -209,59 +329,99 @@ export const CommandSequencePanel = ({
         </div>
       </div>
 
+      {failureDetails && (
+        <div className='mt-5 rounded-xl border border-warn-500/45 bg-warn-500/10 p-4 text-sm'>
+          <div className='flex flex-wrap items-center gap-2'>
+            <span className='chip border-warn-500/50 bg-warn-500/10 text-warn-500'>
+              Failure diagnosis
+            </span>
+            <span className='text-steel-200'>
+              Step {failureDetails.stepNumber}: {failureDetails.methodLabel}
+            </span>
+            <span className='font-mono text-xs text-steel-300'>
+              {failureDetails.method}
+            </span>
+          </div>
+          <p className='mt-3 text-steel-200'>{failureDetails.reason}</p>
+          {errorMessage && (
+            <p className='mt-2 text-xs text-warn-500'>Detail: {errorMessage}</p>
+          )}
+        </div>
+      )}
+
       <div className='mt-5 space-y-3'>
         {steps.length === 0 ? (
-          <div className='rounded-lg border border-dashed border-steel-700/60 bg-coal-900/35 px-4 py-6 text-sm text-steel-400'>
-            No sequence steps yet. Use "Add Control" to build a run.
+          <div className='rounded-xl border border-dashed border-steel-700/60 bg-coal-900/35 px-4 py-8 text-center'>
+            <p className='text-sm text-steel-300'>No sequence steps yet.</p>
+            <p className='mt-1 text-xs text-steel-500'>
+              Build your flow with Add Step, then run it to monitor live status cards.
+            </p>
+            <button
+              className='btn btn-primary mt-4'
+              onClick={() => setAddOpen(true)}
+              disabled={sequenceLocked}
+              type='button'
+            >
+              Add First Step
+            </button>
           </div>
         ) : (
-          steps.map((step, index) => {
-            const result = results[index] ?? { status: 'idle' }
-            const isActive = status === 'running' && activeIndex === index
+          derived.stepCards.map((item) => {
+            const isFailedAndFocused =
+              failureDetails && failureDetails.stepNumber === item.index + 1
+            const cardTone = getStepCardTone(item.status)
 
             return (
               <div
-                key={step.id}
-                className={`rounded-xl border px-4 py-3 text-sm shadow-panel transition ${
-                  isActive
-                    ? 'border-signal-500/40 bg-signal-500/5'
-                    : 'border-steel-700/45 bg-coal-900/55'
-                }`}
+                key={item.step.id}
+                className={`rounded-xl border px-4 py-3 text-sm shadow-panel transition ${cardTone} ${
+                  item.isActive ? 'ring-1 ring-signal-500/60' : ''
+                } ${isFailedAndFocused ? 'ring-1 ring-warn-500/70' : ''}`}
               >
-                <div className='flex flex-wrap items-center gap-3'>
-                  <span className='chip border-steel-600/70 bg-transparent text-[11px] text-steel-300'>
-                    Step {index + 1}
-                  </span>
-                  <span className='text-steel-100'>
-                    {COMMAND_METHOD_LABELS[step.method]}
-                  </span>
-                  <span className='text-xs text-steel-400'>{step.method}</span>
-                  <span className={`chip ${getStepTone(result.status)}`}>
-                    {result.status === 'pending' && (
-                      <InlineSpinner className='h-3 w-3' />
+                <div className='flex flex-wrap items-start gap-3'>
+                  <div className='flex flex-wrap items-center gap-2'>
+                    <span className='chip border-steel-600/70 bg-transparent text-[11px] text-steel-300'>
+                      Step {item.index + 1}
+                    </span>
+                    <span className='text-steel-100'>
+                      {COMMAND_METHOD_LABELS[item.step.method]}
+                    </span>
+                    <span className='text-xs text-steel-400'>{item.step.method}</span>
+                    <span className={`chip ${getStepTone(item.status)}`}>
+                      {item.status === 'pending' && (
+                        <InlineSpinner className='h-3 w-3' />
+                      )}
+                      {item.isWaiting && item.status === 'success'
+                        ? 'waiting'
+                        : getStepLabel(item.status)}
+                    </span>
+                    {item.isActive && (
+                      <span className='chip border-signal-500/60 bg-signal-500/10 text-signal-400'>
+                        active
+                      </span>
                     )}
-                    {getStepLabel(result.status)}
-                  </span>
-                  <div className='ml-auto flex flex-wrap items-center gap-2'>
+                  </div>
+
+                  <div className='ml-auto grid w-full gap-2 sm:w-auto sm:grid-cols-3'>
                     <button
                       className='btn h-8 px-3 text-xs'
-                      onClick={() => onMoveStep(index, 'up')}
-                      disabled={sequenceLocked || index === 0}
+                      onClick={() => onMoveStep(item.index, 'up')}
+                      disabled={sequenceLocked || item.index === 0}
                       type='button'
                     >
                       Up
                     </button>
                     <button
                       className='btn h-8 px-3 text-xs'
-                      onClick={() => onMoveStep(index, 'down')}
-                      disabled={sequenceLocked || index === steps.length - 1}
+                      onClick={() => onMoveStep(item.index, 'down')}
+                      disabled={sequenceLocked || item.index === steps.length - 1}
                       type='button'
                     >
                       Down
                     </button>
                     <button
                       className='btn btn-danger h-8 px-3 text-xs'
-                      onClick={() => onRemoveStep(index)}
+                      onClick={() => onRemoveStep(item.index)}
                       disabled={sequenceLocked}
                       type='button'
                     >
@@ -270,21 +430,19 @@ export const CommandSequencePanel = ({
                   </div>
                 </div>
 
-                <div className='mt-3 flex flex-wrap items-center gap-3 text-xs text-steel-300'>
-                  <span className='rounded-full border border-steel-700/70 px-3 py-1'>
-                    {step.summary}
+                <div className='mt-3 grid gap-2 text-xs text-steel-300 sm:grid-cols-2 xl:grid-cols-4'>
+                  <span className='rounded-full border border-steel-700/70 px-3 py-1 text-steel-200'>
+                    {item.step.summary}
+                  </span>
+                  <span className='rounded-full border border-steel-700/70 px-3 py-1 text-steel-300'>
+                    wait {formatWaitLabel(item.effectiveWaitMs)}
+                    {item.usesDefaultWait ? ' (default)' : ''}
                   </span>
                   <span className='rounded-full border border-steel-700/70 px-3 py-1 text-steel-400'>
-                    wait{' '}
-                    {formatWaitLabel(
-                      Number.isFinite(step.waitMs) ? step.waitMs : defaultWaitMs,
-                    )}
+                    result {item.result.result ?? 'N/A'}
                   </span>
-                  <span className='text-steel-400'>
-                    result {result.result ?? 'N/A'}
-                  </span>
-                  <span className='font-mono text-[11px] text-steel-500'>
-                    tid {result.tid ? formatShortTid(result.tid) : 'N/A'}
+                  <span className='rounded-full border border-steel-700/70 px-3 py-1 font-mono text-[11px] text-steel-500'>
+                    tid {item.result.tid ? formatShortTid(item.result.tid) : 'N/A'}
                   </span>
                 </div>
               </div>
@@ -301,7 +459,6 @@ export const CommandSequencePanel = ({
           onClose={() => setAddOpen(false)}
         />
       )}
-
     </section>
   )
 }

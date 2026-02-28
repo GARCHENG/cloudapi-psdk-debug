@@ -968,8 +968,9 @@ function App() {
       const fallbackWaitMs = Number.isFinite(sequenceDefaultWaitSeconds)
         ? Math.max(0, sequenceDefaultWaitSeconds) * 1000
         : DEFAULT_SEQUENCE_WAIT_MS;
-      const waitMs = Number.isFinite(waitSeconds)
-        ? Math.max(0, waitSeconds) * 1000
+      const waitMs =
+        typeof waitSeconds === "number" && Number.isFinite(waitSeconds)
+          ? Math.max(0, waitSeconds) * 1000
         : fallbackWaitMs;
       setSequenceSteps((prev) => [
         ...prev,
@@ -1176,8 +1177,10 @@ function App() {
         const fallbackWaitMs = Number.isFinite(sequenceDefaultWaitSeconds)
           ? Math.max(0, sequenceDefaultWaitSeconds) * 1000
           : DEFAULT_SEQUENCE_WAIT_MS;
-        const waitMs = Number.isFinite(stepsSnapshot[index]?.waitMs)
-          ? Math.max(0, stepsSnapshot[index].waitMs)
+        const stepWaitMs = stepsSnapshot[index]?.waitMs;
+        const waitMs =
+          typeof stepWaitMs === "number" && Number.isFinite(stepWaitMs)
+          ? Math.max(0, stepWaitMs)
           : fallbackWaitMs;
         const shouldContinue = await waitForDelay(waitMs, index);
         if (sequenceRunIdRef.current !== runId) return;
