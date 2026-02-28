@@ -1,20 +1,71 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  语言：中文（简体）
+  所有产出物必须用简体中文撰写,but:
+  - Keep technical terms like "API", "REST", "GraphQL" in English
+  - Code examples and file paths remain in English
+  Project: psdk-debug-front
+  Purpose: Frontend console for debugging DJI Cloud API PSDK workflows over MQTT.
+  Primary workflows:
+  - Connect to an MQTT broker with gateway_sn and device_sn.
+  - Subscribe to state/events/services_reply topics and visualize status.
+  - Publish service commands for speaker and PSDK widget interactions.
+  - Track command lifecycle with pending/success/failure/timeout statuses.
+  - Run command sequences with delay, stop, and per-step result tracking.
+  Domain constraints:
+  - Topic templates:
+    - state: thing/product/{device_sn}/state
+    - events: thing/product/{gateway_sn}/events
+    - services: thing/product/{gateway_sn}/services
+    - services_reply: thing/product/{gateway_sn}/services_reply
+  - Env vars are defined in .env with VITE_ prefix.
+  - Built-in widget configs live in public/widget-configs and can be overridden by uploaded widget_config.json.
+  Technology stack:
+  - React 19 + TypeScript 5 + Vite 7
+  - MQTT.js for broker communication
+  - Tailwind CSS 3 + PostCSS + Autoprefixer
+  - ESLint 9 flat config + typescript-eslint + react-hooks + react-refresh
+  Source layout:
+  - src/main.tsx and src/App.tsx are app entry/composition points.
+  - src/hooks/useMqtt.ts contains MQTT connection logic.
+  - src/lib contains shared utilities (topic builders, widget helpers, ids).
+  - src/types contains PSDK payload and app model types.
+  - src/components/app contains feature panels.
+  Build and quality:
+  - Package manager: npm (package-lock.json committed)
+  - Scripts:
+    - npm run dev
+    - npm run build
+    - npm run preview
+    - npm run lint
+  - predev/prebuild/prepreview run scripts/generate-widget-config-registry.mjs
+  Conventions:
+  - TypeScript + React functional components.
+  - Prefer 2-space indentation, single quotes, and no semicolons.
+  - Hooks use useX naming and are placed in src/hooks.
+  - Components and types use PascalCase.
+  - Shared constants use SCREAMING_SNAKE_CASE.
+  - Keep Tailwind class groups readable and intentional.
+  - Conventional Commits are required (feat:, fix:, chore:, docs:, refactor:, test:).
+  Testing notes:
+  - No test runner is configured currently.
+  - If tests are introduced, place them under src and add npm run test.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+rules:
+  proposal:
+    - Focus on behavior changes and MQTT message-flow impact, not only UI copy updates.
+    - Include Non-goals and explicit risks when changing topics, payload fields, or timeouts.
+    - Call out any required .env additions or default value changes.
+  design:
+    - Describe publish/subscribe paths per topic and expected acknowledgements.
+    - Define or update TypeScript types before implementation when payload contracts change.
+    - Reuse existing hooks/lib/panels unless there is a clear reason to create new abstractions.
+  tasks:
+    - Break work into small, file-targeted tasks with clear acceptance outcomes.
+    - Include verification tasks for npm run lint and npm run build.
+    - Include manual verification for connect, command publish, reply handling, and timeout behavior.
+  spec:
+    - Use MUST/SHOULD/MAY wording for requirement clarity.
+    - Specify error and timeout semantics for command and sequence execution changes.
+    - Include acceptance criteria for both UI state and command log/feedback results.
