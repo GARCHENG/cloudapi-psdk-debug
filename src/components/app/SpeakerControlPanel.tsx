@@ -31,8 +31,11 @@ interface SpeakerControlPanelProps {
   setAudioUrl: (value: string) => void;
   audioMd5: string;
   setAudioMd5: (value: string) => void;
+  canValidateAudio: boolean;
   audioValid: boolean;
   audioValidation: SpeakerAudioPlayStartValidationResult;
+  pendingAudioValidation: boolean;
+  handleValidateAudioPlayStart: () => void;
   pendingAudioPlayStart: boolean;
   handleAudioPlayStart: () => void;
   handleFillDefaultAudioPlay: () => void;
@@ -86,8 +89,11 @@ export const SpeakerControlPanel = ({
   setAudioUrl,
   audioMd5,
   setAudioMd5,
+  canValidateAudio,
   audioValid,
   audioValidation,
+  pendingAudioValidation,
+  handleValidateAudioPlayStart,
   pendingAudioPlayStart,
   handleAudioPlayStart,
   handleFillDefaultAudioPlay,
@@ -120,13 +126,39 @@ export const SpeakerControlPanel = ({
   const [widgetExampleModalOpen, setWidgetExampleModalOpen] = useState(false)
   const [widgetExampleDeviceType, setWidgetExampleDeviceType] = useState('')
   const [widgetExampleDescription, setWidgetExampleDescription] = useState('')
-  const showAudioValidation = audioUrl.trim().length > 0
+  const showAudioValidation =
+    audioUrl.trim().length > 0 ||
+    audioMd5.trim().length > 0 ||
+    audioValidation.status === 'validating'
   const audioValidationTone =
     audioValidation.status === 'valid'
       ? 'border-signal-500/45 bg-signal-500/10 text-signal-400'
       : audioValidation.status === 'validating'
         ? 'border-amber-500/50 bg-amber-500/10 text-amber-400'
         : 'border-warn-500/45 bg-warn-500/10 text-warn-500'
+  const audioValidationMessage = (() => {
+    switch (audioValidation.errorCode) {
+      case 'URL_REQUIRED':
+      case 'INVALID_URL':
+      case 'INVALID_PROTOCOL':
+        return `URL/protocol validation failed: ${audioValidation.message}`
+      case 'INVALID_WAV_HEADER':
+      case 'UNSUPPORTED_WAV_FORMAT':
+      case 'CHANNELS_MISMATCH':
+      case 'SAMPLE_RATE_MISMATCH':
+      case 'BITS_PER_SAMPLE_MISMATCH':
+        return `PCM format validation failed: ${audioValidation.message}`
+      case 'MD5_REQUIRED':
+      case 'MD5_MISMATCH':
+        return `MD5 validation failed: ${audioValidation.message}`
+      case 'NETWORK_ERROR':
+      case 'HTTP_ERROR':
+      case 'MD5_CALCULATION_FAILED':
+        return `Network/CORS validation error: ${audioValidation.message}`
+      default:
+        return audioValidation.message
+    }
+  })()
 
   const handleWidgetExamplePick = ({
     index,
@@ -347,10 +379,25 @@ export const SpeakerControlPanel = ({
                 {audioValidation.status === 'validating' && (
                   <InlineSpinner className='h-3 w-3' />
                 )}
-                {audioValidation.message}
+                {audioValidationMessage}
               </p>
             )}
             <div className="mt-auto flex flex-wrap gap-3">
+              <button
+                className="btn"
+                onClick={handleValidateAudioPlayStart}
+                disabled={!canValidateAudio || pendingAudioValidation}
+                aria-busy={pendingAudioValidation}
+              >
+                {pendingAudioValidation ? (
+                  <>
+                    <InlineSpinner />
+                    Validating...
+                  </>
+                ) : (
+                  "Validate Audio"
+                )}
+              </button>
               <button
                 className="btn btn-primary"
                 onClick={handleAudioPlayStart}

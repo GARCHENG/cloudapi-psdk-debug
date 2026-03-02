@@ -3,10 +3,13 @@ import "./App.css";
 import { useMqtt } from "./hooks/useMqtt";
 import { createId } from "./lib/id";
 import {
+  createMd5RequiredSpeakerAudioValidation,
   createRequiredSpeakerAudioValidation,
+  createRevalidationRequiredSpeakerAudioValidation,
   createValidatingSpeakerAudioValidation,
+  type SpeakerAudioPlayStartValidationSnapshot,
   type SpeakerAudioPlayStartValidationResult,
-  validateSpeakerAudioPlayStartPcmUrl,
+  validateSpeakerAudioPlayStartManual,
 } from "./lib/speakerAudioPlayStartValidation";
 import {
   buildEventsTopic,
@@ -170,6 +173,8 @@ function App() {
     useState<SpeakerAudioPlayStartValidationResult>(
       createRequiredSpeakerAudioValidation,
     );
+  const [audioValidationSnapshot, setAudioValidationSnapshot] =
+    useState<SpeakerAudioPlayStartValidationSnapshot | null>(null);
   const [stopRequested, setStopRequested] = useState(false);
   const [logModalOpen, setLogModalOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -703,8 +708,43 @@ function App() {
   );
   const pendingWidgetValueSet = pendingCommandSet.has("psdk_widget_value_set");
 
-  const validateAudioPlayStartUrl = useCallback(async (rawUrl: string) => {
-    const normalizedUrl = rawUrl.trim();
+  const resetAudioValidationForInputChange = useCallback(
+    (nextUrl: string, nextMd5: string) => {
+      audioValidationRequestRef.current += 1;
+      const normalizedUrl = nextUrl.trim();
+      const normalizedMd5 = nextMd5.trim();
+
+      if (!normalizedUrl) {
+        setAudioValidation(createRequiredSpeakerAudioValidation());
+      } else if (!normalizedMd5) {
+        setAudioValidation(createMd5RequiredSpeakerAudioValidation(normalizedUrl));
+      } else {
+        setAudioValidation(
+          createRevalidationRequiredSpeakerAudioValidation(
+            normalizedUrl,
+            normalizedMd5,
+          ),
+        );
+      }
+
+      setAudioValidationSnapshot(null);
+    },
+    [],
+  );
+
+  const handleAudioUrlChange = useCallback((value: string) => {
+    setAudioUrl(value);
+    resetAudioValidationForInputChange(value, audioMd5);
+  }, [audioMd5, resetAudioValidationForInputChange]);
+
+  const handleAudioMd5Change = useCallback((value: string) => {
+    setAudioMd5(value);
+    resetAudioValidationForInputChange(audioUrl, value);
+  }, [audioUrl, resetAudioValidationForInputChange]);
+
+  const handleValidateAudioPlayStart = useCallback(async () => {
+    const normalizedUrl = audioUrl.trim();
+    const normalizedMd5 = audioMd5.trim();
     const requestId = audioValidationRequestRef.current + 1;
     audioValidationRequestRef.current = requestId;
 
@@ -712,44 +752,39 @@ function App() {
       const required = createRequiredSpeakerAudioValidation();
       if (audioValidationRequestRef.current === requestId) {
         setAudioValidation(required);
+        setAudioValidationSnapshot(null);
       }
       return required;
     }
 
-    setAudioValidation(createValidatingSpeakerAudioValidation(normalizedUrl));
-    const result = await validateSpeakerAudioPlayStartPcmUrl(normalizedUrl);
+    if (!normalizedMd5) {
+      const md5Required = createMd5RequiredSpeakerAudioValidation(normalizedUrl);
+      if (audioValidationRequestRef.current === requestId) {
+        setAudioValidation(md5Required);
+        setAudioValidationSnapshot(null);
+      }
+      return md5Required;
+    }
+
+    setAudioValidation(
+      createValidatingSpeakerAudioValidation(normalizedUrl, normalizedMd5),
+    );
+
+    const result = await validateSpeakerAudioPlayStartManual(
+      normalizedUrl,
+      normalizedMd5,
+    );
     if (audioValidationRequestRef.current === requestId) {
       setAudioValidation(result);
+      setAudioValidationSnapshot(
+        result.status === "valid" && result.snapshot ? result.snapshot : null,
+      );
     }
+
     return result;
-  }, []);
+  }, [audioMd5, audioUrl]);
 
-  const handleAudioUrlChange = useCallback((value: string) => {
-    setAudioUrl(value);
-    const normalizedUrl = value.trim();
-    if (!normalizedUrl) {
-      audioValidationRequestRef.current += 1;
-      setAudioValidation(createRequiredSpeakerAudioValidation());
-      return;
-    }
-    setAudioValidation(createValidatingSpeakerAudioValidation(normalizedUrl));
-  }, []);
-
-  useEffect(() => {
-    if (!audioUrl.trim()) {
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      void validateAudioPlayStartUrl(audioUrl);
-    }, 350);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [audioUrl, validateAudioPlayStartUrl]);
-
-  const handleAudioPlayStart = async () => {
+  const handleAudioPlayStart = () => {
     const normalizedName = audioName.trim();
     const normalizedUrl = audioUrl.trim();
     const normalizedMd5 = audioMd5.trim();
@@ -759,9 +794,8 @@ function App() {
       return;
     }
 
-    const validation = await validateAudioPlayStartUrl(normalizedUrl);
-    if (validation.status !== "valid") {
-      window.alert(validation.message);
+    if (!audioValid) {
+      window.alert("Please click Validate Audio and wait for a successful result before sending.");
       return;
     }
 
@@ -778,8 +812,12 @@ function App() {
 
   const handleFillDefaultAudioPlay = () => {
     setAudioName(DEFAULT_AUDIO_PLAY_NAME);
-    handleAudioUrlChange(DEFAULT_AUDIO_PLAY_URL);
+    setAudioUrl(DEFAULT_AUDIO_PLAY_URL);
     setAudioMd5(DEFAULT_AUDIO_PLAY_MD5);
+    resetAudioValidationForInputChange(
+      DEFAULT_AUDIO_PLAY_URL,
+      DEFAULT_AUDIO_PLAY_MD5,
+    );
   };
 
   const handleTtsPlayStart = () => {
@@ -830,11 +868,18 @@ function App() {
     });
   };
 
+  const canValidateAudio =
+    audioName.trim().length > 0 &&
+    audioUrl.trim().length > 0 &&
+    audioMd5.trim().length > 0;
+  const pendingAudioValidation = audioValidation.status === "validating";
+
   const audioValid =
     audioName.trim().length > 0 &&
     audioUrl.trim().length > 0 &&
     audioMd5.trim().length > 0 &&
-    audioValidation.status === "valid";
+    audioValidation.status === "valid" &&
+    audioValidationSnapshot !== null;
 
   const ttsValid =
     ttsName.trim().length > 0 &&
@@ -1427,9 +1472,12 @@ function App() {
           audioUrl={audioUrl}
           setAudioUrl={handleAudioUrlChange}
           audioMd5={audioMd5}
-          setAudioMd5={setAudioMd5}
+          setAudioMd5={handleAudioMd5Change}
+          canValidateAudio={canValidateAudio}
           audioValid={audioValid}
           audioValidation={audioValidation}
+          pendingAudioValidation={pendingAudioValidation}
+          handleValidateAudioPlayStart={handleValidateAudioPlayStart}
           pendingAudioPlayStart={pendingAudioPlayStart}
           handleAudioPlayStart={handleAudioPlayStart}
           handleFillDefaultAudioPlay={handleFillDefaultAudioPlay}
