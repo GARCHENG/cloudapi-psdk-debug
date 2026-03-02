@@ -1,4 +1,4 @@
-﻿## ADDED Requirements
+## ADDED Requirements
 
 ### Requirement: 分层展示序列信息与运行概览
 系统 MUST 在 Command Sequence 面板中提供清晰的分层结构，至少包含序列概览、步骤列表、运行反馈三个信息区，并在运行期间持续显示当前进度。
