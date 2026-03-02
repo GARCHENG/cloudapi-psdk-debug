@@ -25,6 +25,7 @@ export interface SpeakerPcmMetadata {
   channels: number
   sampleRate: number
   bitsPerSample: number
+  source?: 'wav_header' | 'raw_pcm_assumed'
 }
 
 export interface SpeakerAudioPlayStartValidationResult {
@@ -65,7 +66,10 @@ const createValidResult = (
   valid: true,
   url,
   metadata,
-  message: `PCM check passed: ${metadata.channels} ch / ${metadata.sampleRate} Hz / ${metadata.bitsPerSample} bit`,
+  message:
+    metadata.source === 'raw_pcm_assumed'
+      ? `Raw PCM detected (.pcm). Assuming ${metadata.channels} ch / ${metadata.sampleRate} Hz / ${metadata.bitsPerSample} bit.`
+      : `PCM check passed: ${metadata.channels} ch / ${metadata.sampleRate} Hz / ${metadata.bitsPerSample} bit`,
 })
 
 export const createValidatingSpeakerAudioValidation = (
@@ -125,6 +129,38 @@ const parseWavMetadata = (buffer: ArrayBuffer): ParsedWavMetadata | null => {
   }
 
   return null
+}
+
+const parseContentLengthFromResponse = (response: Response) => {
+  const contentRange = response.headers.get('content-range')
+  if (contentRange) {
+    const match = contentRange.match(/\/(\d+)\s*$/)
+    if (match) {
+      const parsed = Number(match[1])
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed
+      }
+    }
+  }
+
+  const contentLength = response.headers.get('content-length')
+  if (contentLength) {
+    const parsed = Number(contentLength)
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed
+    }
+  }
+
+  return null
+}
+
+const looksLikeRawPcmUrl = (url: string) => {
+  try {
+    const parsed = new URL(url)
+    return parsed.pathname.toLowerCase().endsWith('.pcm')
+  } catch {
+    return false
+  }
 }
 
 export const validateSpeakerAudioPlayStartUrl = (
@@ -189,10 +225,31 @@ export const validateSpeakerAudioPlayStartPcmUrl = async (
     const buffer = await response.arrayBuffer()
     const metadata = parseWavMetadata(buffer)
     if (!metadata) {
+      const totalBytes = parseContentLengthFromResponse(response)
+      const isRawPcmCandidate = looksLikeRawPcmUrl(url)
+
+      if (isRawPcmCandidate) {
+        if (totalBytes !== null && totalBytes % 2 !== 0) {
+          return createInvalidResult(
+            url,
+            'BITS_PER_SAMPLE_MISMATCH',
+            `Raw PCM size is not 16-bit aligned (bytes=${totalBytes}).`,
+          )
+        }
+
+        return createValidResult(url, {
+          audioFormat: 1,
+          channels: EXPECTED_CHANNELS,
+          sampleRate: EXPECTED_SAMPLE_RATE,
+          bitsPerSample: EXPECTED_BITS_PER_SAMPLE,
+          source: 'raw_pcm_assumed',
+        })
+      }
+
       return createInvalidResult(
         url,
         'INVALID_WAV_HEADER',
-        'Unable to parse WAV PCM metadata from this URL.',
+        'Unable to parse WAV PCM metadata from this URL. For raw PCM, use a .pcm URL.',
       )
     }
 
@@ -228,7 +285,10 @@ export const validateSpeakerAudioPlayStartPcmUrl = async (
       )
     }
 
-    return createValidResult(url, metadata)
+    return createValidResult(url, {
+      ...metadata,
+      source: 'wav_header',
+    })
   } catch {
     return createInvalidResult(
       url,
