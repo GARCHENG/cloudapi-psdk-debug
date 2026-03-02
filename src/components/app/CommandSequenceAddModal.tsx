@@ -1,8 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { SectionHeader } from './ui'
+import { InlineSpinner, SectionHeader } from './ui'
 import { COMMAND_METHOD_LABELS } from './view-helpers'
 import type { PsdkCommandMethod } from '../../types/psdk'
+import {
+  createRequiredSpeakerAudioValidation,
+  createValidatingSpeakerAudioValidation,
+  type SpeakerAudioPlayStartValidationResult,
+  validateSpeakerAudioPlayStartPcmUrl,
+} from '../../lib/speakerAudioPlayStartValidation'
 
 export interface CommandSequenceDefaults {
   psdkIndex: number
@@ -52,11 +58,55 @@ export const CommandSequenceAddModal = ({
     null,
   )
   const [draft, setDraft] = useState<CommandSequenceDefaults>(defaults)
+  const [audioValidation, setAudioValidation] =
+    useState<SpeakerAudioPlayStartValidationResult>(
+      createRequiredSpeakerAudioValidation,
+    )
+  const audioValidationRequestRef = useRef(0)
 
   const inputBoxTextBytes = useMemo(
     () => new TextEncoder().encode(draft.inputBoxText).length,
     [draft.inputBoxText],
   )
+
+  const validateAudioDraftUrl = useCallback(async (rawUrl: string) => {
+    const normalizedUrl = rawUrl.trim()
+    const requestId = audioValidationRequestRef.current + 1
+    audioValidationRequestRef.current = requestId
+
+    if (!normalizedUrl) {
+      const required = createRequiredSpeakerAudioValidation()
+      if (audioValidationRequestRef.current === requestId) {
+        setAudioValidation(required)
+      }
+      return required
+    }
+
+    setAudioValidation(createValidatingSpeakerAudioValidation(normalizedUrl))
+    const result = await validateSpeakerAudioPlayStartPcmUrl(normalizedUrl)
+    if (audioValidationRequestRef.current === requestId) {
+      setAudioValidation(result)
+    }
+    return result
+  }, [])
+
+  useEffect(() => {
+    if (selectedMethod !== 'speaker_audio_play_start') {
+      return
+    }
+
+    if (!draft.audioUrl.trim()) {
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      void validateAudioDraftUrl(draft.audioUrl)
+    }, 350)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [draft.audioUrl, selectedMethod, validateAudioDraftUrl])
 
   const buildDraftData = (method: PsdkCommandMethod) => {
     switch (method) {
@@ -124,6 +174,12 @@ export const CommandSequenceAddModal = ({
       ) {
         return 'Audio name, URL, and MD5 are required.'
       }
+      if (audioValidation.status === 'validating') {
+        return 'Validating audio URL and PCM metadata...'
+      }
+      if (audioValidation.status === 'invalid') {
+        return audioValidation.message
+      }
     }
     if (method === 'speaker_tts_play_start') {
       if (!draft.ttsName.trim() || !draft.ttsText.trim() || !draft.ttsMd5.trim()) {
@@ -165,6 +221,34 @@ export const CommandSequenceAddModal = ({
   const selectedError = selectedMethod ? validateDraft(selectedMethod) : null
   const canAddSelected =
     Boolean(selectedMethod) && !selectedError && !locked
+  const showAudioValidation =
+    selectedMethod === 'speaker_audio_play_start' && draft.audioUrl.trim().length > 0
+  const audioValidationTone =
+    audioValidation.status === 'valid'
+      ? 'border-signal-500/45 bg-signal-500/10 text-signal-400'
+      : audioValidation.status === 'validating'
+        ? 'border-amber-500/50 bg-amber-500/10 text-amber-400'
+        : 'border-warn-500/45 bg-warn-500/10 text-warn-500'
+
+  const handleAddSelected = async () => {
+    if (!selectedMethod) return
+    const error = validateDraft(selectedMethod)
+    if (error) return
+
+    if (selectedMethod === 'speaker_audio_play_start') {
+      const result = await validateAudioDraftUrl(draft.audioUrl)
+      if (result.status !== 'valid') {
+        return
+      }
+    }
+
+    onAddStep(
+      selectedMethod,
+      buildDraftData(selectedMethod),
+      draft.waitSeconds,
+    )
+    onClose()
+  }
 
   return createPortal(
     <div
@@ -194,6 +278,16 @@ export const CommandSequenceAddModal = ({
                   key={method}
                   onClick={() => {
                     setDraft(defaults)
+                    if (method === 'speaker_audio_play_start') {
+                      const defaultUrl = defaults.audioUrl.trim()
+                      setAudioValidation(
+                        defaultUrl
+                          ? createValidatingSpeakerAudioValidation(defaultUrl)
+                          : createRequiredSpeakerAudioValidation(),
+                      )
+                    } else {
+                      setAudioValidation(createRequiredSpeakerAudioValidation())
+                    }
                     setSelectedMethod(method)
                   }}
                   type='button'
@@ -328,12 +422,18 @@ export const CommandSequenceAddModal = ({
                       <input
                         className='input'
                         value={draft.audioUrl}
-                        onChange={(event) =>
+                        onChange={(event) => {
+                          const nextUrl = event.target.value
+                          setAudioValidation(
+                            nextUrl.trim()
+                              ? createValidatingSpeakerAudioValidation(nextUrl.trim())
+                              : createRequiredSpeakerAudioValidation(),
+                          )
                           setDraft((prev) => ({
                             ...prev,
-                            audioUrl: event.target.value,
+                            audioUrl: nextUrl,
                           }))
-                        }
+                        }}
                         placeholder='File URL (PCM)'
                       />
                       <input
@@ -347,6 +447,16 @@ export const CommandSequenceAddModal = ({
                         }
                         placeholder='File MD5'
                       />
+                      {showAudioValidation && (
+                        <p
+                          className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${audioValidationTone}`}
+                        >
+                          {audioValidation.status === 'validating' && (
+                            <InlineSpinner className='h-3 w-3' />
+                          )}
+                          {audioValidation.message}
+                        </p>
+                      )}
                     </div>
                   )}
 
@@ -474,19 +584,14 @@ export const CommandSequenceAddModal = ({
                     className='btn btn-primary'
                     disabled={!canAddSelected}
                     onClick={() => {
-                      if (!selectedMethod) return
-                      const error = validateDraft(selectedMethod)
-                      if (error) return
-                      onAddStep(
-                        selectedMethod,
-                        buildDraftData(selectedMethod),
-                        draft.waitSeconds,
-                      )
-                      onClose()
+                      void handleAddSelected()
                     }}
                     type='button'
                   >
-                    Add To Sequence
+                    {selectedMethod === 'speaker_audio_play_start' &&
+                    audioValidation.status === 'validating'
+                      ? 'Validating...'
+                      : 'Add To Sequence'}
                   </button>
                   <button
                     className='btn'

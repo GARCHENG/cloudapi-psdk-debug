@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { InlineSpinner, SectionHeader } from "./ui";
 import type { CommandFeedback } from "../../types/psdk";
+import type { SpeakerAudioPlayStartValidationResult } from '../../lib/speakerAudioPlayStartValidation'
 import { COMMAND_METHOD_LABELS, formatShortTid } from "./view-helpers";
 import {
   WidgetValueExampleModal,
@@ -31,6 +32,7 @@ interface SpeakerControlPanelProps {
   audioMd5: string;
   setAudioMd5: (value: string) => void;
   audioValid: boolean;
+  audioValidation: SpeakerAudioPlayStartValidationResult;
   pendingAudioPlayStart: boolean;
   handleAudioPlayStart: () => void;
   handleFillDefaultAudioPlay: () => void;
@@ -85,6 +87,7 @@ export const SpeakerControlPanel = ({
   audioMd5,
   setAudioMd5,
   audioValid,
+  audioValidation,
   pendingAudioPlayStart,
   handleAudioPlayStart,
   handleFillDefaultAudioPlay,
@@ -117,6 +120,13 @@ export const SpeakerControlPanel = ({
   const [widgetExampleModalOpen, setWidgetExampleModalOpen] = useState(false)
   const [widgetExampleDeviceType, setWidgetExampleDeviceType] = useState('')
   const [widgetExampleDescription, setWidgetExampleDescription] = useState('')
+  const showAudioValidation = audioUrl.trim().length > 0
+  const audioValidationTone =
+    audioValidation.status === 'valid'
+      ? 'border-signal-500/45 bg-signal-500/10 text-signal-400'
+      : audioValidation.status === 'validating'
+        ? 'border-amber-500/50 bg-amber-500/10 text-amber-400'
+        : 'border-warn-500/45 bg-warn-500/10 text-warn-500'
 
   const handleWidgetExamplePick = ({
     index,
@@ -332,6 +342,14 @@ export const SpeakerControlPanel = ({
               onChange={(event) => setAudioMd5(event.target.value)}
               placeholder="File MD5"
             />
+            {showAudioValidation && (
+              <p className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${audioValidationTone}`}>
+                {audioValidation.status === 'validating' && (
+                  <InlineSpinner className='h-3 w-3' />
+                )}
+                {audioValidation.message}
+              </p>
+            )}
             <div className="mt-auto flex flex-wrap gap-3">
               <button
                 className="btn btn-primary"
