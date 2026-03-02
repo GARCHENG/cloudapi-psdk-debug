@@ -20,6 +20,6 @@
 
 - [x] 4.1 运行 `npm run lint` 并修复新增代码问题。
 - [x] 4.2 运行 `npm run build`，确认产物可构建。
-- [ ] 4.3 手工验证连接流程：连接 MQTT 后在 `PSDK Control` 完成一次“手动校验成功 -> 发送命令 -> 收到 services_reply”闭环。
-- [ ] 4.4 手工验证失败路径：md5 不一致或 URL 不可访问时，系统阻止发送且错误可定位。
+- [x] 4.3 手工验证连接流程：连接 MQTT 后在 `PSDK Control` 完成一次“手动校验成功 -> 发送命令 -> 收到 services_reply”闭环。
+- [x] 4.4 手工验证失败路径：md5 不一致或 URL 不可访问时，系统阻止发送且错误可定位。
 - [ ] 4.5 手工验证超时路径：在无 ACK 场景下确认 `speaker_audio_play_start` 仍按既有 timeout 语义表现（无新增 topic/字段副作用）。

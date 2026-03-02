@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { InlineSpinner, SectionHeader } from './ui'
 import { COMMAND_METHOD_LABELS } from './view-helpers'
 import type { PsdkCommandMethod } from '../../types/psdk'
 import {
+  createMd5RequiredSpeakerAudioValidation,
   createRequiredSpeakerAudioValidation,
+  createRevalidationRequiredSpeakerAudioValidation,
   createValidatingSpeakerAudioValidation,
+  type SpeakerAudioPlayStartValidationSnapshot,
   type SpeakerAudioPlayStartValidationResult,
-  validateSpeakerAudioPlayStartPcmUrl,
+  validateSpeakerAudioPlayStartManual,
 } from '../../lib/speakerAudioPlayStartValidation'
 
 export interface CommandSequenceDefaults {
@@ -62,6 +65,8 @@ export const CommandSequenceAddModal = ({
     useState<SpeakerAudioPlayStartValidationResult>(
       createRequiredSpeakerAudioValidation,
     )
+  const [audioValidationSnapshot, setAudioValidationSnapshot] =
+    useState<SpeakerAudioPlayStartValidationSnapshot | null>(null)
   const audioValidationRequestRef = useRef(0)
 
   const inputBoxTextBytes = useMemo(
@@ -69,8 +74,55 @@ export const CommandSequenceAddModal = ({
     [draft.inputBoxText],
   )
 
-  const validateAudioDraftUrl = useCallback(async (rawUrl: string) => {
-    const normalizedUrl = rawUrl.trim()
+  const resetAudioValidationForDraftChange = useCallback(
+    (nextUrl: string, nextMd5: string) => {
+      audioValidationRequestRef.current += 1
+      const normalizedUrl = nextUrl.trim()
+      const normalizedMd5 = nextMd5.trim()
+
+      if (!normalizedUrl) {
+        setAudioValidation(createRequiredSpeakerAudioValidation())
+      } else if (!normalizedMd5) {
+        setAudioValidation(createMd5RequiredSpeakerAudioValidation(normalizedUrl))
+      } else {
+        setAudioValidation(
+          createRevalidationRequiredSpeakerAudioValidation(
+            normalizedUrl,
+            normalizedMd5,
+          ),
+        )
+      }
+
+      setAudioValidationSnapshot(null)
+    },
+    [],
+  )
+
+  const handleAudioUrlDraftChange = useCallback(
+    (value: string) => {
+      setDraft((prev) => ({
+        ...prev,
+        audioUrl: value,
+      }))
+      resetAudioValidationForDraftChange(value, draft.audioMd5)
+    },
+    [draft.audioMd5, resetAudioValidationForDraftChange],
+  )
+
+  const handleAudioMd5DraftChange = useCallback(
+    (value: string) => {
+      setDraft((prev) => ({
+        ...prev,
+        audioMd5: value,
+      }))
+      resetAudioValidationForDraftChange(draft.audioUrl, value)
+    },
+    [draft.audioUrl, resetAudioValidationForDraftChange],
+  )
+
+  const handleValidateAudioDraft = useCallback(async () => {
+    const normalizedUrl = draft.audioUrl.trim()
+    const normalizedMd5 = draft.audioMd5.trim()
     const requestId = audioValidationRequestRef.current + 1
     audioValidationRequestRef.current = requestId
 
@@ -78,35 +130,61 @@ export const CommandSequenceAddModal = ({
       const required = createRequiredSpeakerAudioValidation()
       if (audioValidationRequestRef.current === requestId) {
         setAudioValidation(required)
+        setAudioValidationSnapshot(null)
       }
       return required
     }
 
-    setAudioValidation(createValidatingSpeakerAudioValidation(normalizedUrl))
-    const result = await validateSpeakerAudioPlayStartPcmUrl(normalizedUrl)
+    if (!normalizedMd5) {
+      const md5Required = createMd5RequiredSpeakerAudioValidation(normalizedUrl)
+      if (audioValidationRequestRef.current === requestId) {
+        setAudioValidation(md5Required)
+        setAudioValidationSnapshot(null)
+      }
+      return md5Required
+    }
+
+    setAudioValidation(
+      createValidatingSpeakerAudioValidation(normalizedUrl, normalizedMd5),
+    )
+
+    const result = await validateSpeakerAudioPlayStartManual(
+      normalizedUrl,
+      normalizedMd5,
+    )
     if (audioValidationRequestRef.current === requestId) {
       setAudioValidation(result)
+      setAudioValidationSnapshot(
+        result.status === 'valid' && result.snapshot ? result.snapshot : null,
+      )
     }
+
     return result
-  }, [])
+  }, [draft.audioMd5, draft.audioUrl])
 
-  useEffect(() => {
-    if (selectedMethod !== 'speaker_audio_play_start') {
-      return
+  const audioValidationMessage = (() => {
+    switch (audioValidation.errorCode) {
+      case 'URL_REQUIRED':
+      case 'INVALID_URL':
+      case 'INVALID_PROTOCOL':
+        return `URL/protocol validation failed: ${audioValidation.message}`
+      case 'INVALID_WAV_HEADER':
+      case 'UNSUPPORTED_WAV_FORMAT':
+      case 'CHANNELS_MISMATCH':
+      case 'SAMPLE_RATE_MISMATCH':
+      case 'BITS_PER_SAMPLE_MISMATCH':
+        return `PCM format validation failed: ${audioValidation.message}`
+      case 'MD5_REQUIRED':
+      case 'MD5_MISMATCH':
+        return `MD5 validation failed: ${audioValidation.message}`
+      case 'NETWORK_ERROR':
+      case 'HTTP_ERROR':
+      case 'MD5_CALCULATION_FAILED':
+        return `Network/CORS validation error: ${audioValidation.message}`
+      default:
+        return audioValidation.message
     }
-
-    if (!draft.audioUrl.trim()) {
-      return
-    }
-
-    const timer = window.setTimeout(() => {
-      void validateAudioDraftUrl(draft.audioUrl)
-    }, 350)
-
-    return () => {
-      window.clearTimeout(timer)
-    }
-  }, [draft.audioUrl, selectedMethod, validateAudioDraftUrl])
+  })()
 
   const buildDraftData = (method: PsdkCommandMethod) => {
     switch (method) {
@@ -175,10 +253,13 @@ export const CommandSequenceAddModal = ({
         return 'Audio name, URL, and MD5 are required.'
       }
       if (audioValidation.status === 'validating') {
-        return 'Validating audio URL and PCM metadata...'
+        return 'Validating URL, PCM metadata, and MD5...'
       }
-      if (audioValidation.status === 'invalid') {
-        return audioValidation.message
+      if (
+        audioValidation.status !== 'valid' ||
+        audioValidationSnapshot === null
+      ) {
+        return audioValidationMessage
       }
     }
     if (method === 'speaker_tts_play_start') {
@@ -221,8 +302,16 @@ export const CommandSequenceAddModal = ({
   const selectedError = selectedMethod ? validateDraft(selectedMethod) : null
   const canAddSelected =
     Boolean(selectedMethod) && !selectedError && !locked
+  const canValidateAudio =
+    draft.audioName.trim().length > 0 &&
+    draft.audioUrl.trim().length > 0 &&
+    draft.audioMd5.trim().length > 0
+  const pendingAudioValidation = audioValidation.status === 'validating'
   const showAudioValidation =
-    selectedMethod === 'speaker_audio_play_start' && draft.audioUrl.trim().length > 0
+    selectedMethod === 'speaker_audio_play_start' &&
+    (draft.audioUrl.trim().length > 0 ||
+      draft.audioMd5.trim().length > 0 ||
+      audioValidation.status === 'validating')
   const audioValidationTone =
     audioValidation.status === 'valid'
       ? 'border-signal-500/45 bg-signal-500/10 text-signal-400'
@@ -230,17 +319,10 @@ export const CommandSequenceAddModal = ({
         ? 'border-amber-500/50 bg-amber-500/10 text-amber-400'
         : 'border-warn-500/45 bg-warn-500/10 text-warn-500'
 
-  const handleAddSelected = async () => {
+  const handleAddSelected = () => {
     if (!selectedMethod) return
     const error = validateDraft(selectedMethod)
     if (error) return
-
-    if (selectedMethod === 'speaker_audio_play_start') {
-      const result = await validateAudioDraftUrl(draft.audioUrl)
-      if (result.status !== 'valid') {
-        return
-      }
-    }
 
     onAddStep(
       selectedMethod,
@@ -279,14 +361,14 @@ export const CommandSequenceAddModal = ({
                   onClick={() => {
                     setDraft(defaults)
                     if (method === 'speaker_audio_play_start') {
-                      const defaultUrl = defaults.audioUrl.trim()
-                      setAudioValidation(
-                        defaultUrl
-                          ? createValidatingSpeakerAudioValidation(defaultUrl)
-                          : createRequiredSpeakerAudioValidation(),
+                      resetAudioValidationForDraftChange(
+                        defaults.audioUrl,
+                        defaults.audioMd5,
                       )
                     } else {
+                      audioValidationRequestRef.current += 1
                       setAudioValidation(createRequiredSpeakerAudioValidation())
+                      setAudioValidationSnapshot(null)
                     }
                     setSelectedMethod(method)
                   }}
@@ -422,28 +504,16 @@ export const CommandSequenceAddModal = ({
                       <input
                         className='input'
                         value={draft.audioUrl}
-                        onChange={(event) => {
-                          const nextUrl = event.target.value
-                          setAudioValidation(
-                            nextUrl.trim()
-                              ? createValidatingSpeakerAudioValidation(nextUrl.trim())
-                              : createRequiredSpeakerAudioValidation(),
-                          )
-                          setDraft((prev) => ({
-                            ...prev,
-                            audioUrl: nextUrl,
-                          }))
-                        }}
+                        onChange={(event) =>
+                          handleAudioUrlDraftChange(event.target.value)
+                        }
                         placeholder='File URL (PCM)'
                       />
                       <input
                         className='input'
                         value={draft.audioMd5}
                         onChange={(event) =>
-                          setDraft((prev) => ({
-                            ...prev,
-                            audioMd5: event.target.value,
-                          }))
+                          handleAudioMd5DraftChange(event.target.value)
                         }
                         placeholder='File MD5'
                       />
@@ -454,9 +524,29 @@ export const CommandSequenceAddModal = ({
                           {audioValidation.status === 'validating' && (
                             <InlineSpinner className='h-3 w-3' />
                           )}
-                          {audioValidation.message}
+                          {audioValidationMessage}
                         </p>
                       )}
+                      <div className='flex flex-wrap gap-3'>
+                        <button
+                          className='btn'
+                          onClick={() => {
+                            void handleValidateAudioDraft()
+                          }}
+                          disabled={!canValidateAudio || pendingAudioValidation}
+                          aria-busy={pendingAudioValidation}
+                          type='button'
+                        >
+                          {pendingAudioValidation ? (
+                            <>
+                              <InlineSpinner />
+                              Validating...
+                            </>
+                          ) : (
+                            'Validate Audio'
+                          )}
+                        </button>
+                      </div>
                     </div>
                   )}
 
@@ -589,7 +679,7 @@ export const CommandSequenceAddModal = ({
                     type='button'
                   >
                     {selectedMethod === 'speaker_audio_play_start' &&
-                    audioValidation.status === 'validating'
+                    pendingAudioValidation
                       ? 'Validating...'
                       : 'Add To Sequence'}
                   </button>
