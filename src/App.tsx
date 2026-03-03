@@ -98,6 +98,17 @@ interface ProgressMessageIds {
   bid?: string;
 }
 
+const normalizeMessageId = (value: unknown) => {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  return undefined;
+};
+
 const isValidPercent = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 
@@ -457,6 +468,7 @@ function App() {
       const updatedAt = typeof ts === "number" ? ts : Date.now();
       const nextProgress = buildCommandProgress(method, data, updatedAt);
       let nextActiveProgress: ActivePlayProgress | null = null;
+      const popupTid = ids.tid ?? ids.bid;
 
       setCommandLogs((prev) => {
         const idx = resolveProgressLogIndex(prev, ids, method);
@@ -488,6 +500,16 @@ function App() {
         return updated;
       });
 
+      if (!nextActiveProgress && popupTid) {
+        nextActiveProgress = {
+          commandMethod: nextProgress.commandMethod,
+          tid: popupTid,
+          bid: ids.bid,
+          shortTid: formatShortTid(popupTid),
+          progress: nextProgress,
+        };
+      }
+
       if (nextActiveProgress) {
         setActivePlayProgress(nextActiveProgress);
       }
@@ -508,9 +530,13 @@ function App() {
       const record = payload as {
         method?: string;
         data?: unknown;
-        bid?: string;
-        tid?: string;
+        bid?: unknown;
+        tid?: unknown;
         timestamp?: number;
+      };
+      const messageIds: ProgressMessageIds = {
+        tid: normalizeMessageId(record.tid),
+        bid: normalizeMessageId(record.bid),
       };
 
       if (record.method === "psdk_floating_window_text") {
@@ -539,8 +565,8 @@ function App() {
 
       if (servicesReplyTopic && topic === servicesReplyTopic) {
         const data = record.data as ServiceReplyData | undefined;
-        const methodFromTid = record.tid
-          ? pendingCommandsRef.current.get(record.tid)?.method
+        const methodFromTid = messageIds.tid
+          ? pendingCommandsRef.current.get(messageIds.tid)?.method
           : undefined;
         const replyMethod =
           record.method && isCommandMethod(record.method)
@@ -549,8 +575,8 @@ function App() {
         if (data && typeof data.result === "number" && replyMethod) {
           updateLogFromReply(
             {
-              tid: record.tid,
-              bid: record.bid,
+              tid: messageIds.tid,
+              bid: messageIds.bid,
             },
             replyMethod,
             data.result,
@@ -566,11 +592,11 @@ function App() {
         isSpeakerProgressMethod(record.method)
       ) {
         const data = record.data as SpeakerPlayProgressData | undefined;
-        if (data && (record.tid || record.bid)) {
+        if (data && (messageIds.tid || messageIds.bid)) {
           updateLogFromProgress(
             {
-              tid: record.tid,
-              bid: record.bid,
+              tid: messageIds.tid,
+              bid: messageIds.bid,
             },
             record.method,
             data,
