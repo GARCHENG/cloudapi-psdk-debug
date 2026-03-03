@@ -22,6 +22,10 @@ export type SpeakerProgressMethod =
   | 'speaker_audio_play_start_progress'
   | 'speaker_tts_play_start_progress'
 
+export type SpeakerPlayableCommandMethod =
+  | 'speaker_audio_play_start'
+  | 'speaker_tts_play_start'
+
 export interface SpeakerPlayProgressDetail {
   percent?: number
   step_key?: string
@@ -41,15 +45,25 @@ export interface SpeakerPlayProgressData {
 
 export interface CommandPlayProgress {
   method: SpeakerProgressMethod
+  commandMethod: SpeakerPlayableCommandMethod
   percent?: number
   status?: string
   stepKey?: string
+  psdkIndex?: number
+  md5?: string
   updatedAt: number
 }
 
+export interface ActivePlayProgress {
+  commandMethod: SpeakerPlayableCommandMethod
+  tid: string
+  bid?: string
+  shortTid: string
+  progress: CommandPlayProgress
+}
+
 export type SpeakerCommandMethod =
-  | 'speaker_audio_play_start'
-  | 'speaker_tts_play_start'
+  | SpeakerPlayableCommandMethod
   | 'speaker_replay'
   | 'speaker_play_stop'
   | 'speaker_play_mode_set'

@@ -3,6 +3,7 @@ import type {
   CommandPlayProgress,
   CommandStatus,
   PsdkCommandMethod,
+  SpeakerPlayableCommandMethod,
 } from '../../types/psdk'
 
 export type OnlineState = 'online' | 'offline' | 'unknown'
@@ -39,6 +40,71 @@ export const COMMAND_METHOD_LABELS: Record<PsdkCommandMethod, string> = {
   psdk_widget_value_set: 'Widget Value Set',
 }
 
+export const PLAY_PROGRESS_COMMAND_METHODS: SpeakerPlayableCommandMethod[] = [
+  'speaker_audio_play_start',
+  'speaker_tts_play_start',
+]
+
+const PLAY_PROGRESS_STEP_LABELS: Record<string, string> = {
+  download: 'Download',
+  downloading: 'Downloading',
+  prepare: 'Prepare',
+  preparing: 'Preparing',
+  upload: 'Upload',
+  uploading: 'Uploading',
+  play: 'Play',
+  playing: 'Playing',
+  complete: 'Complete',
+  completed: 'Completed',
+  finish: 'Finish',
+  finished: 'Finished',
+}
+
+const PLAY_PROGRESS_STATUS_LABELS: Record<string, string> = {
+  idle: 'Idle',
+  pending: 'Pending',
+  running: 'Running',
+  success: 'Success',
+  failure: 'Failure',
+  failed: 'Failed',
+  timeout: 'Timeout',
+  done: 'Done',
+  completed: 'Completed',
+}
+
+const normalizeProgressToken = (value?: string) => {
+  if (!value) return undefined
+  const normalized = value.trim().toLowerCase()
+  return normalized.length > 0 ? normalized : undefined
+}
+
+const toReadableText = (value?: string) => {
+  if (!value) return undefined
+  return value
+    .replace(/[_-]+/g, ' ')
+    .split(' ')
+    .filter((part) => part.length > 0)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+export const isPlayProgressCommandMethod = (
+  method: PsdkCommandMethod,
+): method is SpeakerPlayableCommandMethod =>
+  PLAY_PROGRESS_COMMAND_METHODS.includes(method as SpeakerPlayableCommandMethod)
+
+export const formatProgressStepLabel = (stepKey?: string) => {
+  const normalized = normalizeProgressToken(stepKey)
+  if (!normalized) return undefined
+  return PLAY_PROGRESS_STEP_LABELS[normalized] ?? toReadableText(stepKey)
+}
+
+export const formatProgressStatusLabel = (status?: string) => {
+  const normalized = normalizeProgressToken(status)
+  if (!normalized) return undefined
+  return PLAY_PROGRESS_STATUS_LABELS[normalized] ?? toReadableText(status)
+}
+
 export const formatProgressLabel = (playProgress?: CommandPlayProgress) => {
   if (!playProgress) return 'N/A'
 
@@ -46,11 +112,13 @@ export const formatProgressLabel = (playProgress?: CommandPlayProgress) => {
   if (typeof playProgress.percent === 'number') {
     parts.push(`${playProgress.percent}%`)
   }
-  if (playProgress.stepKey) {
-    parts.push(playProgress.stepKey)
+  const stepLabel = formatProgressStepLabel(playProgress.stepKey)
+  if (stepLabel) {
+    parts.push(stepLabel)
   }
-  if (playProgress.status) {
-    parts.push(playProgress.status)
+  const statusLabel = formatProgressStatusLabel(playProgress.status)
+  if (statusLabel) {
+    parts.push(statusLabel)
   }
 
   if (parts.length === 0) return 'Received'

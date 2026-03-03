@@ -18,9 +18,11 @@ import {
   buildStateTopic,
 } from "./lib/psdk";
 import {
+  type ActivePlayProgress,
   type CommandFeedback,
   type CommandFeedbackStatus,
   type CommandLogEntry,
+  type CommandPlayProgress,
   type CommandSequenceStep,
   type FloatingWindowData,
   type PsdkCommandMethod,
@@ -31,6 +33,7 @@ import {
   type ServiceReplyData,
   type SpeakerCommandMethod,
   type SpeakerPlayProgressData,
+  type SpeakerPlayableCommandMethod,
   type SpeakerProgressMethod,
   buildBaseMessage,
 } from "./types/psdk";
@@ -38,10 +41,11 @@ import { CommandResultsPanel } from "./components/app/CommandResultsPanel";
 import { CommandSequencePanel } from "./components/app/CommandSequencePanel";
 import { ConnectionPanel } from "./components/app/ConnectionPanel";
 import { FloatingWindowPanel } from "./components/app/FloatingWindowPanel";
+import { PlayProgressPopup } from "./components/app/PlayProgressPopup";
 import { PsdkStatePanel } from "./components/app/PsdkStatePanel";
 import { SpeakerControlPanel } from "./components/app/SpeakerControlPanel";
 import { StatusBadge } from "./components/app/ui";
-import { mqttStatusTone, onlineTone } from "./components/app/view-helpers";
+import { formatShortTid, mqttStatusTone, onlineTone } from "./components/app/view-helpers";
 
 const ONLINE_THRESHOLD_MS = 15000;
 const MAX_LOGS = 50;
@@ -75,7 +79,7 @@ const SPEAKER_PROGRESS_METHODS: SpeakerProgressMethod[] = [
 
 const PROGRESS_TO_COMMAND_METHOD: Record<
   SpeakerProgressMethod,
-  SpeakerCommandMethod
+  SpeakerPlayableCommandMethod
 > = {
   speaker_audio_play_start_progress: "speaker_audio_play_start",
   speaker_tts_play_start_progress: "speaker_tts_play_start",
@@ -88,6 +92,73 @@ const isSpeakerProgressMethod = (
   value: string,
 ): value is SpeakerProgressMethod =>
   SPEAKER_PROGRESS_METHODS.includes(value as SpeakerProgressMethod);
+
+interface ProgressMessageIds {
+  tid?: string;
+  bid?: string;
+}
+
+const isValidPercent = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value);
+
+const clampPercent = (value?: number) => {
+  if (!isValidPercent(value)) return undefined;
+  return Math.max(0, Math.min(100, value));
+};
+
+const resolveProgressLogIndex = (
+  logs: CommandLogEntry[],
+  ids: ProgressMessageIds,
+  method: SpeakerProgressMethod,
+) => {
+  const expectedMethod = PROGRESS_TO_COMMAND_METHOD[method];
+  const hasTid = typeof ids.tid === "string" && ids.tid.length > 0;
+  const hasBid = typeof ids.bid === "string" && ids.bid.length > 0;
+
+  if (hasTid) {
+    return logs.findIndex((entry) => {
+      if (entry.method !== expectedMethod || entry.tid !== ids.tid) {
+        return false;
+      }
+      if (!hasBid) {
+        return true;
+      }
+      return entry.bid === ids.bid;
+    });
+  }
+
+  if (hasBid) {
+    return logs.findIndex(
+      (entry) => entry.method === expectedMethod && entry.bid === ids.bid,
+    );
+  }
+
+  return -1;
+};
+
+const buildCommandProgress = (
+  method: SpeakerProgressMethod,
+  data: SpeakerPlayProgressData,
+  updatedAt: number,
+): CommandPlayProgress => {
+  const progress = data.output?.progress;
+  const rawPercent = progress?.percent;
+  const rawStepKey = progress?.step_key;
+  const rawStatus = data.output?.status;
+  const rawPsdkIndex = data.output?.psdk_index;
+  const rawMd5 = data.output?.md5;
+
+  return {
+    method,
+    commandMethod: PROGRESS_TO_COMMAND_METHOD[method],
+    percent: clampPercent(rawPercent),
+    stepKey: typeof rawStepKey === "string" ? rawStepKey : undefined,
+    status: typeof rawStatus === "string" ? rawStatus : undefined,
+    psdkIndex: typeof rawPsdkIndex === "number" ? rawPsdkIndex : undefined,
+    md5: typeof rawMd5 === "string" ? rawMd5 : undefined,
+    updatedAt,
+  };
+};
 
 const COMMAND_FEEDBACK_TTL_MS = 6000;
 const COMMAND_REPLY_TIMEOUT_MS = 10000;
@@ -177,6 +248,8 @@ function App() {
     useState<SpeakerAudioPlayStartValidationSnapshot | null>(null);
   const [stopRequested, setStopRequested] = useState(false);
   const [logModalOpen, setLogModalOpen] = useState(false);
+  const [activePlayProgress, setActivePlayProgress] =
+    useState<ActivePlayProgress | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const pendingCommandsRef = useRef<Map<string, PendingCommand>>(new Map());
   const feedbackTimerRef = useRef<Map<string, number>>(new Map());
@@ -376,50 +449,48 @@ function App() {
 
   const updateLogFromProgress = useCallback(
     (
-      ids: { tid?: string; bid?: string },
+      ids: ProgressMessageIds,
       method: SpeakerProgressMethod,
       data: SpeakerPlayProgressData,
       ts?: number,
     ) => {
-      setCommandLogs((prev) => {
-        const idx = prev.findIndex((entry) => {
-          const idMatched =
-            (ids.tid && entry.tid === ids.tid) ||
-            (ids.bid && entry.bid === ids.bid);
-          if (!idMatched) return false;
+      const updatedAt = typeof ts === "number" ? ts : Date.now();
+      const nextProgress = buildCommandProgress(method, data, updatedAt);
+      let nextActiveProgress: ActivePlayProgress | null = null;
 
-          const expectedMethod = PROGRESS_TO_COMMAND_METHOD[method];
-          return entry.method === expectedMethod;
-        });
+      setCommandLogs((prev) => {
+        const idx = resolveProgressLogIndex(prev, ids, method);
         if (idx === -1) return prev;
 
-        const percent =
-          typeof data.output?.progress?.percent === "number"
-            ? data.output.progress.percent
-            : undefined;
-        const stepKey =
-          typeof data.output?.progress?.step_key === "string"
-            ? data.output.progress.step_key
-            : undefined;
-        const status =
-          typeof data.output?.status === "string"
-            ? data.output.status
-            : undefined;
+        const entry = prev[idx];
+        const currentUpdatedAt = entry.playProgress?.updatedAt;
+        if (
+          typeof currentUpdatedAt === "number" &&
+          nextProgress.updatedAt < currentUpdatedAt
+        ) {
+          return prev;
+        }
 
-        const updated = [...prev];
-        updated[idx] = {
-          ...updated[idx],
-          playProgress: {
-            method,
-            percent,
-            stepKey,
-            status,
-            updatedAt: ts ?? Date.now(),
-          },
+        const updatedEntry: CommandLogEntry = {
+          ...entry,
+          playProgress: nextProgress,
         };
+        nextActiveProgress = {
+          commandMethod: nextProgress.commandMethod,
+          tid: updatedEntry.tid,
+          bid: updatedEntry.bid,
+          shortTid: formatShortTid(updatedEntry.tid),
+          progress: nextProgress,
+        };
+        const updated = [...prev];
+        updated[idx] = updatedEntry;
 
         return updated;
       });
+
+      if (nextActiveProgress) {
+        setActivePlayProgress(nextActiveProgress);
+      }
     },
     [],
   );
@@ -558,6 +629,10 @@ function App() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [logModalOpen]);
+
+  const closePlayProgress = useCallback(() => {
+    setActivePlayProgress(null);
+  }, []);
 
   const lastFloatingAt = floatingWindow?.timestamp ?? null;
   const onlineState = lastFloatingAt
@@ -1532,6 +1607,10 @@ function App() {
           commandLogs={commandLogs}
           logModalOpen={logModalOpen}
           setLogModalOpen={setLogModalOpen}
+        />
+        <PlayProgressPopup
+          progress={activePlayProgress}
+          onClose={closePlayProgress}
         />
 
         <footer className="pt-2 text-center text-xs text-steel-500">

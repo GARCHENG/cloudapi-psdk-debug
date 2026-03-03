@@ -8,6 +8,7 @@ import {
   commandStatusTone,
   formatProgressLabel,
   formatTimestamp,
+  isPlayProgressCommandMethod,
 } from './view-helpers'
 
 interface CommandResultsPanelProps {
@@ -98,7 +99,9 @@ export const CommandResultsPanel = ({
                               </span>
                             </td>
                             <td className='px-4 py-3 text-steel-300'>
-                              {formatProgressLabel(entry.playProgress)}
+                              {isPlayProgressCommandMethod(entry.method)
+                                ? formatProgressLabel(entry.playProgress)
+                                : 'N/A'}
                             </td>
                             <td className='px-4 py-3 text-steel-300'>
                               {entry.result ?? 'N/A'}
