@@ -37,6 +37,12 @@ import {
   type SpeakerProgressMethod,
   buildBaseMessage,
 } from "./types/psdk";
+import {
+  REQUIRED_DESKTOP_CONFIG_FIELDS,
+  type DesktopConfigPayload,
+  type DesktopConfigSource,
+  type RequiredDesktopConfigField,
+} from "./types/desktop";
 import { CommandResultsPanel } from "./components/app/CommandResultsPanel";
 import { CommandSequencePanel } from "./components/app/CommandSequencePanel";
 import { ConnectionPanel } from "./components/app/ConnectionPanel";
@@ -56,6 +62,12 @@ const DEFAULT_AUDIO_PLAY_URL =
   import.meta.env.VITE_AUDIO_PLAY_DEFAULT_URL ?? "";
 const DEFAULT_AUDIO_PLAY_MD5 =
   import.meta.env.VITE_AUDIO_PLAY_DEFAULT_MD5 ?? "";
+const DESKTOP_REQUIRED_FIELD_LABELS: Record<RequiredDesktopConfigField, string> =
+  {
+    brokerUrl: "Broker URL",
+    gatewaySn: "Gateway SN",
+    deviceSn: "Device SN",
+  };
 
 const SPEAKER_METHODS: SpeakerCommandMethod[] = [
   "speaker_audio_play_start",
@@ -211,6 +223,15 @@ function App() {
   const [deviceSn, setDeviceSn] = useState(
     import.meta.env.VITE_DEVICE_SN ?? "",
   );
+  const [desktopConfigSource, setDesktopConfigSource] =
+    useState<DesktopConfigSource | null>(null);
+  const [desktopConfigMessage, setDesktopConfigMessage] = useState<
+    string | null
+  >(null);
+  const isDesktopRuntime = useMemo(
+    () => typeof window.desktop !== "undefined",
+    [],
+  );
 
   const [psdkIndex, setPsdkIndex] = useState(DEFAULT_PSDK_INDEX);
   const [audioName, setAudioName] = useState("");
@@ -283,6 +304,30 @@ function App() {
     }),
     [clientId, mqttPassword, mqttUsername],
   );
+
+  useEffect(() => {
+    if (!isDesktopRuntime || !window.desktop) return;
+
+    let isMounted = true;
+    const loadDesktopConfig = async () => {
+      const result = await window.desktop!.readConfig();
+      if (!isMounted) return;
+
+      setDesktopConfigSource(result.source);
+      setDesktopConfigMessage(result.ok ? null : result.message ?? null);
+      setBrokerUrl(result.config.brokerUrl);
+      setMqttUsername(result.config.mqttUsername);
+      setMqttPassword(result.config.mqttPassword);
+      setGatewaySn(result.config.gatewaySn);
+      setDeviceSn(result.config.deviceSn);
+    };
+
+    void loadDesktopConfig();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isDesktopRuntime]);
 
   const eventsTopic = useMemo(
     () => (gatewaySn ? buildEventsTopic(gatewaySn) : ""),
@@ -671,6 +716,93 @@ function App() {
   const activeEntry =
     psdkEntries.find((entry) => entry.psdk_index === psdkIndex) ??
     psdkEntries[0];
+
+  const missingDesktopRequiredFields = useMemo(() => {
+    const currentConfig: DesktopConfigPayload = {
+      brokerUrl,
+      gatewaySn,
+      deviceSn,
+    };
+
+    return REQUIRED_DESKTOP_CONFIG_FIELDS.filter(
+      (field) => currentConfig[field]?.trim().length === 0,
+    );
+  }, [brokerUrl, deviceSn, gatewaySn]);
+
+  const desktopConfigHint = useMemo(() => {
+    if (!isDesktopRuntime) return null;
+
+    if (missingDesktopRequiredFields.length > 0) {
+      const labels = missingDesktopRequiredFields
+        .map((field) => DESKTOP_REQUIRED_FIELD_LABELS[field])
+        .join(", ");
+      return `Desktop config incomplete. Please fill: ${labels}.`;
+    }
+
+    if (desktopConfigMessage) {
+      return desktopConfigMessage;
+    }
+
+    if (desktopConfigSource === "local") {
+      return "Desktop config source: local file.";
+    }
+
+    if (desktopConfigSource === "env") {
+      return "Desktop config source: .env defaults.";
+    }
+
+    return "Desktop config source: renderer input (not saved yet).";
+  }, [
+    desktopConfigMessage,
+    desktopConfigSource,
+    isDesktopRuntime,
+    missingDesktopRequiredFields,
+  ]);
+
+  const handleConnect = useCallback(async () => {
+    if (
+      isDesktopRuntime &&
+      missingDesktopRequiredFields.length > 0
+    ) {
+      const labels = missingDesktopRequiredFields
+        .map((field) => DESKTOP_REQUIRED_FIELD_LABELS[field])
+        .join(", ");
+      setDesktopConfigMessage(
+        `Desktop config incomplete. Missing: ${labels}.`,
+      );
+      setMqttEnabled(false);
+      return;
+    }
+
+    if (isDesktopRuntime && window.desktop) {
+      const saveResult = await window.desktop.saveConfig({
+        brokerUrl,
+        mqttUsername,
+        mqttPassword,
+        gatewaySn,
+        deviceSn,
+      });
+      if (!saveResult.ok) {
+        setDesktopConfigMessage(
+          saveResult.message ?? "Failed to persist desktop config.",
+        );
+        setMqttEnabled(false);
+        return;
+      }
+      setDesktopConfigSource("local");
+      setDesktopConfigMessage(null);
+    }
+
+    setMqttEnabled(true);
+  }, [
+    brokerUrl,
+    deviceSn,
+    gatewaySn,
+    isDesktopRuntime,
+    missingDesktopRequiredFields,
+    mqttPassword,
+    mqttUsername,
+  ]);
 
   const canConnect =
     brokerUrl.trim().length > 0 &&
@@ -1514,9 +1646,13 @@ function App() {
           <ConnectionPanel
             status={status}
             error={error}
+            desktopConfigHint={desktopConfigHint}
             connectionCollapsed={connectionCollapsed}
             mqttEnabled={mqttEnabled}
             setMqttEnabled={setMqttEnabled}
+            onConnect={() => {
+              void handleConnect();
+            }}
             brokerUrl={brokerUrl}
             setBrokerUrl={setBrokerUrl}
             gatewaySn={gatewaySn}

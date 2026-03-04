@@ -5,9 +5,11 @@ import { mqttStatusTone } from './view-helpers'
 interface ConnectionPanelProps {
   status: MqttStatus
   error: string | null
+  desktopConfigHint: string | null
   connectionCollapsed: boolean
   mqttEnabled: boolean
   setMqttEnabled: (enabled: boolean) => void
+  onConnect: () => void
   brokerUrl: string
   setBrokerUrl: (value: string) => void
   gatewaySn: string
@@ -27,9 +29,11 @@ interface ConnectionPanelProps {
 export const ConnectionPanel = ({
   status,
   error,
+  desktopConfigHint,
   connectionCollapsed,
   mqttEnabled,
   setMqttEnabled,
+  onConnect,
   brokerUrl,
   setBrokerUrl,
   gatewaySn,
@@ -189,7 +193,7 @@ export const ConnectionPanel = ({
           <div className='mt-6 flex flex-wrap items-center gap-3'>
             <button
               className='btn btn-primary'
-              onClick={() => setMqttEnabled(true)}
+              onClick={onConnect}
               disabled={!canConnect || mqttEnabled}
             >
               Connect
@@ -211,6 +215,12 @@ export const ConnectionPanel = ({
       {status === 'error' && (
         <div className='mt-4 rounded-lg border border-warn-500/40 bg-warn-500/10 px-4 py-2 text-sm text-warn-500'>
           MQTT connection failed: {error ?? 'Please verify broker and credentials.'}
+        </div>
+      )}
+
+      {desktopConfigHint && (
+        <div className='mt-4 rounded-lg border border-signal-500/35 bg-signal-500/10 px-4 py-2 text-sm text-signal-300'>
+          {desktopConfigHint}
         </div>
       )}
     </section>

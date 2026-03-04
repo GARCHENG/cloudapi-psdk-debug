@@ -3,16 +3,47 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "main": "out/main/index.js",
   "scripts": {
     "predev": "node scripts/generate-widget-config-registry.mjs",
     "dev": "vite",
+    "predev:desktop": "node scripts/generate-widget-config-registry.mjs",
+    "dev:desktop": "electron-vite dev",
     "prebuild": "node scripts/generate-widget-config-registry.mjs",
     "build": "tsc -b && vite build",
+    "prebuild:desktop": "node scripts/generate-widget-config-registry.mjs",
+    "build:desktop": "electron-vite build && electron-builder",
     "lint": "eslint .",
     "prepreview": "node scripts/generate-widget-config-registry.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "prepreview:desktop": "node scripts/generate-widget-config-registry.mjs",
+    "preview:desktop": "electron-vite preview"
+  },
+  "build": {
+    "appId": "com.garcheng.psdk-debug-front",
+    "productName": "PSDK Debug Front",
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "icon.png",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   },
   "dependencies": {
+    "dotenv": "^17.3.1",
     "mqtt": "^5.15.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
@@ -25,6 +56,9 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
     "autoprefixer": "^10.4.24",
+    "electron": "^40.6.1",
+    "electron-builder": "^26.8.1",
+    "electron-vite": "^5.0.0",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
