@@ -12,6 +12,7 @@ import {
   type NormalizedWidgetEntry,
   parseWidgetConfigJson,
 } from '../../lib/widgetConfig'
+import { resolvePublicAssetUrl } from '../../lib/publicAsset'
 import type { PsdkStateEntry } from '../../types/psdk'
 
 interface PsdkStatePanelProps {
@@ -33,7 +34,7 @@ interface WidgetConfigRegistryEntry {
   url: string
 }
 
-const REGISTRY_URL = '/widget-configs/registry.json'
+const REGISTRY_URL = resolvePublicAssetUrl('/widget-configs/registry.json')
 const CUSTOM_SOURCE_TYPE = 'custom'
 
 const getFileReaderError = (error: DOMException | null) =>
@@ -82,7 +83,7 @@ const buildFallbackRegistry = (): WidgetConfigRegistry => ({
     {
       deviceType: 't40s',
       fileName: 't40s_widget_config.json',
-      url: '/widget-configs/t40s_widget_config.json',
+      url: resolvePublicAssetUrl('/widget-configs/t40s_widget_config.json'),
     },
   ],
 })
@@ -142,7 +143,7 @@ const parseRegistry = (payload: unknown): WidgetConfigRegistry => {
       return {
         deviceType: mappedEntry.deviceType,
         fileName: mappedEntry.fileName,
-        url: mappedEntry.url,
+        url: resolvePublicAssetUrl(mappedEntry.url),
       }
     })
     .filter((entry): entry is WidgetConfigRegistryEntry => entry !== null)

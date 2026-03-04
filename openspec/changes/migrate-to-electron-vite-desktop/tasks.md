@@ -35,7 +35,6 @@
 - [x] 6.1 运行 `npm run lint`，修复新增 Electron 相关代码的静态检查问题
 - [x] 6.2 运行 `npm run build`，确认 Web 构建链路未回归
 - [x] 6.3 运行 `npm run build:desktop`，确认桌面打包产物可生成
-- [ ] 6.4 手工验证：连接 MQTT broker 成功并收到 `state/events/services_reply` 订阅消息
-- [ ] 6.5 手工验证：发布一条 `services` 指令后正确处理 `services_reply` 回执
-- [ ] 6.6 手工验证：制造无回执场景并确认 timeout 状态按预期触发
-
+- [x] 6.4 手工验证：连接 MQTT broker 成功并收到 `state/events/services_reply` 订阅消息
+- [x] 6.5 手工验证：发布一条 `services` 指令后正确处理 `services_reply` 回执
+- [x] 6.6 手工验证：制造无回执场景并确认 timeout 状态按预期触发
