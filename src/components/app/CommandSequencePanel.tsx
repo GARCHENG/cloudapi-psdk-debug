@@ -181,6 +181,7 @@ export const CommandSequencePanel = ({
 }: CommandSequencePanelProps) => {
   const sequenceLocked = status === 'running'
   const [addOpen, setAddOpen] = useState(false)
+  const [expandedStepId, setExpandedStepId] = useState<string | null>(null)
   const addModalOpen = addOpen && !sequenceLocked
 
   // UI mapping: overview (run summary), steps (state cards), feedback (failure diagnostics/live badges).
@@ -408,6 +409,7 @@ export const CommandSequencePanel = ({
               failureDetails && failureDetails.stepNumber === item.index + 1
             const cardTone = getStepCardTone(item.status)
             const summaryEntries = parseStepSummaryEntries(item.step.summary)
+            const isExpanded = expandedStepId === item.step.id
 
             return (
               <div
@@ -440,7 +442,20 @@ export const CommandSequencePanel = ({
                     )}
                   </div>
 
-                  <div className='ml-auto grid w-full gap-2 sm:w-auto sm:grid-cols-3'>
+                  <div className='ml-auto grid w-full gap-2 sm:w-auto sm:grid-cols-4'>
+                    <button
+                      className='btn h-8 px-3 text-xs'
+                      onClick={() =>
+                        setExpandedStepId((prev) =>
+                          prev === item.step.id ? null : item.step.id,
+                        )
+                      }
+                      type='button'
+                      aria-expanded={isExpanded}
+                      aria-controls={`sequence-step-details-${item.step.id}`}
+                    >
+                      {isExpanded ? 'Collapse Details' : 'Expand Details'}
+                    </button>
                     <button
                       className='btn h-8 px-3 text-xs'
                       onClick={() => onMoveStep(item.index, 'up')}
@@ -468,65 +483,70 @@ export const CommandSequencePanel = ({
                   </div>
                 </div>
 
-                <div className='mt-3 space-y-2 text-xs text-steel-300'>
-                  <div className='rounded-lg border border-steel-700/65 bg-coal-900/35 p-3'>
-                    <p className='text-[10px] uppercase tracking-[0.18em] text-steel-500'>
-                      Command detail
-                    </p>
-                    {summaryEntries.length > 0 ? (
-                      <div className='mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4'>
-                        {summaryEntries.map((entry) => (
-                          <div
-                            key={`${item.step.id}-${entry.key}-${entry.value}`}
-                            className='min-w-0 rounded-md border border-steel-700/55 bg-coal-950/35 px-2 py-1.5'
-                          >
-                            <p className='text-[10px] uppercase tracking-[0.14em] text-steel-500'>
-                              {entry.key}
-                            </p>
-                            <p
-                              className={`mt-1 break-all leading-5 text-steel-200 ${
-                                entry.mono ? 'font-mono text-[11px]' : 'text-xs'
-                              }`}
-                              title={entry.value}
+                {isExpanded && (
+                  <div
+                    id={`sequence-step-details-${item.step.id}`}
+                    className='mt-3 space-y-2 text-xs text-steel-300'
+                  >
+                    <div className='rounded-lg border border-steel-700/65 bg-coal-900/35 p-3'>
+                      <p className='text-[10px] uppercase tracking-[0.18em] text-steel-500'>
+                        Command detail
+                      </p>
+                      {summaryEntries.length > 0 ? (
+                        <div className='mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4'>
+                          {summaryEntries.map((entry) => (
+                            <div
+                              key={`${item.step.id}-${entry.key}-${entry.value}`}
+                              className='min-w-0 rounded-md border border-steel-700/55 bg-coal-950/35 px-2 py-1.5'
                             >
-                              {entry.value}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className='mt-2 text-xs text-steel-400'>N/A</p>
-                    )}
-                  </div>
+                              <p className='text-[10px] uppercase tracking-[0.14em] text-steel-500'>
+                                {entry.key}
+                              </p>
+                              <p
+                                className={`mt-1 break-all leading-5 text-steel-200 ${
+                                  entry.mono ? 'font-mono text-[11px]' : 'text-xs'
+                                }`}
+                                title={entry.value}
+                              >
+                                {entry.value}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className='mt-2 text-xs text-steel-400'>N/A</p>
+                      )}
+                    </div>
 
-                  <div className='grid gap-2 sm:grid-cols-2 xl:grid-cols-3'>
-                    <div className='rounded-lg border border-steel-700/70 px-3 py-2'>
-                      <p className='text-[10px] uppercase tracking-[0.14em] text-steel-500'>
-                        Wait
-                      </p>
-                      <p className='mt-1 text-xs text-steel-200'>
-                        {formatWaitLabel(item.effectiveWaitMs)}
-                        {item.usesDefaultWait ? ' (default)' : ''}
-                      </p>
-                    </div>
-                    <div className='rounded-lg border border-steel-700/70 px-3 py-2'>
-                      <p className='text-[10px] uppercase tracking-[0.14em] text-steel-500'>
-                        Result
-                      </p>
-                      <p className='mt-1 text-xs text-steel-300'>
-                        {item.result.result ?? 'N/A'}
-                      </p>
-                    </div>
-                    <div className='rounded-lg border border-steel-700/70 px-3 py-2'>
-                      <p className='text-[10px] uppercase tracking-[0.14em] text-steel-500'>
-                        TID
-                      </p>
-                      <p className='mt-1 font-mono text-[11px] text-steel-400'>
-                        {item.result.tid ? formatShortTid(item.result.tid) : 'N/A'}
-                      </p>
+                    <div className='grid gap-2 sm:grid-cols-2 xl:grid-cols-3'>
+                      <div className='rounded-lg border border-steel-700/70 px-3 py-2'>
+                        <p className='text-[10px] uppercase tracking-[0.14em] text-steel-500'>
+                          Wait
+                        </p>
+                        <p className='mt-1 text-xs text-steel-200'>
+                          {formatWaitLabel(item.effectiveWaitMs)}
+                          {item.usesDefaultWait ? ' (default)' : ''}
+                        </p>
+                      </div>
+                      <div className='rounded-lg border border-steel-700/70 px-3 py-2'>
+                        <p className='text-[10px] uppercase tracking-[0.14em] text-steel-500'>
+                          Result
+                        </p>
+                        <p className='mt-1 text-xs text-steel-300'>
+                          {item.result.result ?? 'N/A'}
+                        </p>
+                      </div>
+                      <div className='rounded-lg border border-steel-700/70 px-3 py-2'>
+                        <p className='text-[10px] uppercase tracking-[0.14em] text-steel-500'>
+                          TID
+                        </p>
+                        <p className='mt-1 font-mono text-[11px] text-steel-400'>
+                          {item.result.tid ? formatShortTid(item.result.tid) : 'N/A'}
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
               </div>
             )
           })
