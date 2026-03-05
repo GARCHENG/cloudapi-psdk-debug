@@ -22,6 +22,7 @@ import {
   type CommandFeedback,
   type CommandFeedbackStatus,
   type CommandLogEntry,
+  type CommandSequenceDefaults,
   type CommandPlayProgress,
   type CommandSequenceStep,
   type FloatingWindowData,
@@ -206,6 +207,22 @@ interface SequenceWaitState {
   totalMs: number;
 }
 
+const createInitialSequenceDefaults = (): CommandSequenceDefaults => ({
+  psdkIndex: DEFAULT_PSDK_INDEX,
+  playMode: 0,
+  playVolume: 20,
+  audioName: "",
+  audioUrl: "",
+  audioMd5: "",
+  ttsName: "",
+  ttsText: "",
+  ttsMd5: "",
+  inputBoxText: "",
+  widgetIndex: 0,
+  widgetValue: 0,
+  waitSeconds: DEFAULT_SEQUENCE_WAIT_MS / 1000,
+});
+
 function App() {
   const [mqttEnabled, setMqttEnabled] = useState(false);
   const [brokerUrl, setBrokerUrl] = useState(
@@ -266,9 +283,10 @@ function App() {
     null,
   );
   const [sequenceError, setSequenceError] = useState<string | null>(null);
-  const [sequenceDefaultWaitSeconds, setSequenceDefaultWaitSeconds] = useState(
-    DEFAULT_SEQUENCE_WAIT_MS / 1000,
-  );
+  const [sequenceDefaults, setSequenceDefaults] =
+    useState<CommandSequenceDefaults>(
+      createInitialSequenceDefaults,
+    );
   const [sequenceWait, setSequenceWait] = useState<SequenceWaitState | null>(
     null,
   );
@@ -1135,82 +1153,6 @@ function App() {
     return `${normalized.slice(0, max)}...`;
   }, []);
 
-  const buildStepData = useCallback(
-    (method: PsdkCommandMethod) => {
-      switch (method) {
-        case "speaker_audio_play_start":
-          if (!audioValid) return null;
-          return {
-            psdk_index: psdkIndex,
-            file: {
-              format: "pcm",
-              md5: audioMd5,
-              name: audioName,
-              url: audioUrl,
-            },
-          };
-        case "speaker_tts_play_start":
-          if (!ttsValid) return null;
-          return {
-            psdk_index: psdkIndex,
-            tts: {
-              md5: ttsMd5,
-              name: ttsName,
-              text: ttsText,
-            },
-          };
-        case "speaker_replay":
-          return { psdk_index: psdkIndex };
-        case "speaker_play_stop":
-          return { psdk_index: psdkIndex };
-        case "speaker_play_mode_set":
-          return {
-            psdk_index: psdkIndex,
-            play_mode: playMode,
-          };
-        case "speaker_play_volume_set":
-          return {
-            psdk_index: psdkIndex,
-            play_volume: playVolume,
-          };
-        case "psdk_input_box_text_set":
-          if (!inputBoxTextValid) return null;
-          return {
-            psdk_index: psdkIndex,
-            value: inputBoxText,
-          };
-        case "psdk_widget_value_set":
-          if (!widgetIndexValid || !widgetValueValid) return null;
-          return {
-            psdk_index: psdkIndex,
-            index: widgetIndex,
-            value: widgetValue,
-          };
-        default:
-          return null;
-      }
-    },
-    [
-      audioMd5,
-      audioName,
-      audioUrl,
-      audioValid,
-      inputBoxText,
-      inputBoxTextValid,
-      playMode,
-      playVolume,
-      psdkIndex,
-      ttsMd5,
-      ttsName,
-      ttsText,
-      ttsValid,
-      widgetIndex,
-      widgetIndexValid,
-      widgetValue,
-      widgetValueValid,
-    ],
-  );
-
   const buildStepSummary = useCallback(
     (method: PsdkCommandMethod, data: Record<string, unknown>) => {
       switch (method) {
@@ -1309,15 +1251,13 @@ function App() {
   const addSequenceStep = useCallback(
     (
       method: PsdkCommandMethod,
-      dataOverride?: Record<string, unknown>,
-      waitSeconds?: number,
+      data: Record<string, unknown>,
+      waitSeconds: number,
     ) => {
       if (sequenceRunning) return;
-      const data = dataOverride ?? buildStepData(method);
-      if (!data) return;
       const summary = buildStepSummary(method, data);
-      const fallbackWaitMs = Number.isFinite(sequenceDefaultWaitSeconds)
-        ? Math.max(0, sequenceDefaultWaitSeconds) * 1000
+      const fallbackWaitMs = Number.isFinite(sequenceDefaults.waitSeconds)
+        ? Math.max(0, sequenceDefaults.waitSeconds) * 1000
         : DEFAULT_SEQUENCE_WAIT_MS;
       const waitMs =
         typeof waitSeconds === "number" && Number.isFinite(waitSeconds)
@@ -1336,10 +1276,9 @@ function App() {
       resetSequenceMeta();
     },
     [
-      buildStepData,
       buildStepSummary,
       resetSequenceMeta,
-      sequenceDefaultWaitSeconds,
+      sequenceDefaults.waitSeconds,
       sequenceRunning,
     ],
   );
@@ -1525,8 +1464,8 @@ function App() {
       }
 
       if (index < stepsSnapshot.length - 1) {
-        const fallbackWaitMs = Number.isFinite(sequenceDefaultWaitSeconds)
-          ? Math.max(0, sequenceDefaultWaitSeconds) * 1000
+        const fallbackWaitMs = Number.isFinite(sequenceDefaults.waitSeconds)
+          ? Math.max(0, sequenceDefaults.waitSeconds) * 1000
           : DEFAULT_SEQUENCE_WAIT_MS;
         const stepWaitMs = stepsSnapshot[index]?.waitMs;
         const waitMs =
@@ -1559,7 +1498,7 @@ function App() {
     sendCommandWithAck,
     sequenceRunning,
     sequenceSteps,
-    sequenceDefaultWaitSeconds,
+    sequenceDefaults.waitSeconds,
     servicesTopic,
   ]);
 
@@ -1569,45 +1508,22 @@ function App() {
     setStopRequested(true);
   }, [sequenceRunning]);
 
-  const normalizedSequenceDefaultWaitSeconds = useMemo(() => {
-    if (!Number.isFinite(sequenceDefaultWaitSeconds)) {
-      return DEFAULT_SEQUENCE_WAIT_MS / 1000;
-    }
-    return Math.max(0, sequenceDefaultWaitSeconds);
-  }, [sequenceDefaultWaitSeconds]);
+  const handleSequenceDefaultWaitSecondsChange = useCallback((next: number) => {
+    setSequenceDefaults((prev) => ({
+      ...prev,
+      waitSeconds: next,
+    }));
+  }, []);
 
-  const sequenceDefaults = useMemo(
-    () => ({
-      psdkIndex,
-      playMode,
-      playVolume,
-      audioName,
-      audioUrl,
-      audioMd5,
-      ttsName,
-      ttsText,
-      ttsMd5,
-      inputBoxText,
-      widgetIndex,
-      widgetValue,
-      waitSeconds: normalizedSequenceDefaultWaitSeconds,
-    }),
-    [
-      audioMd5,
-      audioName,
-      audioUrl,
-      inputBoxText,
-      playMode,
-      playVolume,
-      psdkIndex,
-      ttsMd5,
-      ttsName,
-      ttsText,
-      normalizedSequenceDefaultWaitSeconds,
-      widgetIndex,
-      widgetValue,
-    ],
-  );
+  const normalizedSequenceDefaults = useMemo(() => {
+    const normalizedWaitSeconds = Number.isFinite(sequenceDefaults.waitSeconds)
+      ? Math.max(0, sequenceDefaults.waitSeconds)
+      : DEFAULT_SEQUENCE_WAIT_MS / 1000;
+    return {
+      ...sequenceDefaults,
+      waitSeconds: normalizedWaitSeconds,
+    };
+  }, [sequenceDefaults]);
 
   const canRunSequence = sequenceSteps.length > 0 && !sequenceRunning;
 
@@ -1752,9 +1668,10 @@ function App() {
           activeIndex={sequenceActiveIndex}
           stopRequested={stopRequested}
           errorMessage={sequenceError ?? undefined}
-          defaults={sequenceDefaults}
-          defaultWaitSeconds={sequenceDefaultWaitSeconds}
-          onDefaultWaitSecondsChange={setSequenceDefaultWaitSeconds}
+          defaults={normalizedSequenceDefaults}
+          onDefaultsChange={setSequenceDefaults}
+          defaultWaitSeconds={sequenceDefaults.waitSeconds}
+          onDefaultWaitSecondsChange={handleSequenceDefaultWaitSecondsChange}
           waitState={sequenceWait}
           canRun={canRunSequence}
           onRun={runSequence}

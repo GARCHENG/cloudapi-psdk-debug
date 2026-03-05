@@ -2,7 +2,10 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { InlineSpinner, SectionHeader } from './ui'
 import { COMMAND_METHOD_LABELS } from './view-helpers'
-import type { PsdkCommandMethod } from '../../types/psdk'
+import type {
+  CommandSequenceDefaults,
+  PsdkCommandMethod,
+} from '../../types/psdk'
 import {
   createMd5RequiredSpeakerAudioValidation,
   createRequiredSpeakerAudioValidation,
@@ -13,25 +16,10 @@ import {
   validateSpeakerAudioPlayStartManual,
 } from '../../lib/speakerAudioPlayStartValidation'
 
-export interface CommandSequenceDefaults {
-  psdkIndex: number
-  playMode: 0 | 1
-  playVolume: number
-  audioName: string
-  audioUrl: string
-  audioMd5: string
-  ttsName: string
-  ttsText: string
-  ttsMd5: string
-  inputBoxText: string
-  widgetIndex: number
-  widgetValue: number
-  waitSeconds: number
-}
-
 interface CommandSequenceAddModalProps {
   locked: boolean
   defaults: CommandSequenceDefaults
+  onDefaultsChange: (next: CommandSequenceDefaults) => void
   onAddStep: (
     method: PsdkCommandMethod,
     data: Record<string, unknown>,
@@ -54,6 +42,7 @@ const METHOD_LIST: PsdkCommandMethod[] = [
 export const CommandSequenceAddModal = ({
   locked,
   defaults,
+  onDefaultsChange,
   onAddStep,
   onClose,
 }: CommandSequenceAddModalProps) => {
@@ -324,6 +313,7 @@ export const CommandSequenceAddModal = ({
     const error = validateDraft(selectedMethod)
     if (error) return
 
+    onDefaultsChange(draft)
     onAddStep(
       selectedMethod,
       buildDraftData(selectedMethod),

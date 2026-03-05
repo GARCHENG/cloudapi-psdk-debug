@@ -105,6 +105,22 @@ export interface CommandSequenceStep {
   waitMs: number
 }
 
+export interface CommandSequenceDefaults {
+  psdkIndex: number
+  playMode: 0 | 1
+  playVolume: number
+  audioName: string
+  audioUrl: string
+  audioMd5: string
+  ttsName: string
+  ttsText: string
+  ttsMd5: string
+  inputBoxText: string
+  widgetIndex: number
+  widgetValue: number
+  waitSeconds: number
+}
+
 export type SequenceRunStatus =
   | 'idle'
   | 'running'

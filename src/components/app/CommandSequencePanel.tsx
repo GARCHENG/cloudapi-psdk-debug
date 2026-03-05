@@ -5,11 +5,9 @@ import {
   COMMAND_METHOD_LABELS,
   formatShortTid,
 } from './view-helpers'
-import {
-  CommandSequenceAddModal,
-  type CommandSequenceDefaults,
-} from './CommandSequenceAddModal'
+import { CommandSequenceAddModal } from './CommandSequenceAddModal'
 import type {
+  CommandSequenceDefaults,
   CommandSequenceStep,
   PsdkCommandMethod,
   SequenceRunStatus,
@@ -31,6 +29,7 @@ interface CommandSequencePanelProps {
   stopRequested: boolean
   errorMessage?: string
   defaults: CommandSequenceDefaults
+  onDefaultsChange: (next: CommandSequenceDefaults) => void
   defaultWaitSeconds: number
   onDefaultWaitSecondsChange: (next: number) => void
   waitState: SequenceWaitState | null
@@ -131,6 +130,7 @@ export const CommandSequencePanel = ({
   stopRequested,
   errorMessage,
   defaults,
+  onDefaultsChange,
   defaultWaitSeconds,
   onDefaultWaitSecondsChange,
   waitState,
@@ -455,6 +455,7 @@ export const CommandSequencePanel = ({
         <CommandSequenceAddModal
           locked={sequenceLocked}
           defaults={defaults}
+          onDefaultsChange={onDefaultsChange}
           onAddStep={onAddStep}
           onClose={() => setAddOpen(false)}
         />
