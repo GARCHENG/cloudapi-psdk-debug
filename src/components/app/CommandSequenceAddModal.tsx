@@ -2,6 +2,10 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { InlineSpinner, SectionHeader } from './ui'
 import { COMMAND_METHOD_LABELS } from './view-helpers'
+import {
+  WidgetValueExampleModal,
+  type WidgetExamplePick,
+} from './WidgetValueExampleModal'
 import type {
   CommandSequenceDefaults,
   PsdkCommandMethod,
@@ -15,6 +19,10 @@ import {
   type SpeakerAudioPlayStartValidationResult,
   validateSpeakerAudioPlayStartManual,
 } from '../../lib/speakerAudioPlayStartValidation'
+
+const DEFAULT_AUDIO_PLAY_NAME = import.meta.env.VITE_AUDIO_PLAY_DEFAULT_NAME ?? ''
+const DEFAULT_AUDIO_PLAY_URL = import.meta.env.VITE_AUDIO_PLAY_DEFAULT_URL ?? ''
+const DEFAULT_AUDIO_PLAY_MD5 = import.meta.env.VITE_AUDIO_PLAY_DEFAULT_MD5 ?? ''
 
 interface CommandSequenceAddModalProps {
   locked: boolean
@@ -57,6 +65,9 @@ export const CommandSequenceAddModal = ({
   const [audioValidationSnapshot, setAudioValidationSnapshot] =
     useState<SpeakerAudioPlayStartValidationSnapshot | null>(null)
   const audioValidationRequestRef = useRef(0)
+  const [widgetExampleModalOpen, setWidgetExampleModalOpen] = useState(false)
+  const [widgetExampleDeviceType, setWidgetExampleDeviceType] = useState('')
+  const [widgetExampleDescription, setWidgetExampleDescription] = useState('')
 
   const inputBoxTextBytes = useMemo(
     () => new TextEncoder().encode(draft.inputBoxText).length,
@@ -150,6 +161,31 @@ export const CommandSequenceAddModal = ({
 
     return result
   }, [draft.audioMd5, draft.audioUrl])
+
+  const handleFillDefaultAudioDraft = useCallback(() => {
+    setDraft((prev) => ({
+      ...prev,
+      audioName: DEFAULT_AUDIO_PLAY_NAME,
+      audioUrl: DEFAULT_AUDIO_PLAY_URL,
+      audioMd5: DEFAULT_AUDIO_PLAY_MD5,
+    }))
+    resetAudioValidationForDraftChange(DEFAULT_AUDIO_PLAY_URL, DEFAULT_AUDIO_PLAY_MD5)
+  }, [resetAudioValidationForDraftChange])
+
+  const handleWidgetExamplePick = ({
+    index,
+    value,
+    deviceType,
+    description,
+  }: WidgetExamplePick) => {
+    setDraft((prev) => ({
+      ...prev,
+      widgetIndex: index,
+      widgetValue: value,
+    }))
+    setWidgetExampleDeviceType(deviceType)
+    setWidgetExampleDescription(description)
+  }
 
   const audioValidationMessage = (() => {
     switch (audioValidation.errorCode) {
@@ -323,14 +359,15 @@ export const CommandSequenceAddModal = ({
   }
 
   return createPortal(
-    <div
-      className='fixed inset-0 z-50 flex items-center justify-center bg-coal-950/75 px-4 py-6'
-      onClick={onClose}
-    >
+    <>
       <div
-        className='panel w-full max-w-4xl'
-        onClick={(event) => event.stopPropagation()}
+        className='fixed inset-0 z-50 flex items-center justify-center bg-coal-950/75 px-4 py-6'
+        onClick={onClose}
       >
+        <div
+          className='panel w-full max-w-4xl'
+          onClick={(event) => event.stopPropagation()}
+        >
         <div className='flex flex-wrap items-start justify-between gap-4'>
           <SectionHeader title='Add Sequence Step' subtitle='Sequence Builder' />
           <button className='btn btn-danger' onClick={onClose} type='button'>
@@ -350,6 +387,9 @@ export const CommandSequenceAddModal = ({
                   key={method}
                   onClick={() => {
                     setDraft(defaults)
+                    setWidgetExampleModalOpen(false)
+                    setWidgetExampleDeviceType('')
+                    setWidgetExampleDescription('')
                     if (method === 'speaker_audio_play_start') {
                       resetAudioValidationForDraftChange(
                         defaults.audioUrl,
@@ -480,6 +520,16 @@ export const CommandSequenceAddModal = ({
 
                   {selectedMethod === 'speaker_audio_play_start' && (
                     <div className='grid gap-3'>
+                      <div className='flex flex-wrap items-center justify-between gap-3'>
+                        <p className='label m-0'>Audio Play Start</p>
+                        <button
+                          className='btn h-8 px-3 text-xs'
+                          onClick={handleFillDefaultAudioDraft}
+                          type='button'
+                        >
+                          default
+                        </button>
+                      </div>
                       <input
                         className='input'
                         value={draft.audioName}
@@ -600,6 +650,16 @@ export const CommandSequenceAddModal = ({
 
                   {selectedMethod === 'psdk_widget_value_set' && (
                     <div className='grid gap-3'>
+                      <div className='flex flex-wrap items-center justify-between gap-3'>
+                        <p className='label m-0'>Widget Value Set</p>
+                        <button
+                          className='btn h-8 px-3 text-xs'
+                          onClick={() => setWidgetExampleModalOpen(true)}
+                          type='button'
+                        >
+                          e.g.
+                        </button>
+                      </div>
                       <div className='flex flex-wrap items-center gap-3'>
                         <label className='label m-0'>Widget Index</label>
                         <input
@@ -612,12 +672,14 @@ export const CommandSequenceAddModal = ({
                               : ''
                           }
                           onChange={(event) =>
-                            handleDraftNumberChange(event.target.value, (next) =>
+                            handleDraftNumberChange(event.target.value, (next) => {
+                              setWidgetExampleDeviceType('')
+                              setWidgetExampleDescription('')
                               setDraft((prev) => ({
                                 ...prev,
                                 widgetIndex: next,
-                              })),
-                            )
+                              }))
+                            })
                           }
                           className='input w-24'
                         />
@@ -632,16 +694,28 @@ export const CommandSequenceAddModal = ({
                               : ''
                           }
                           onChange={(event) =>
-                            handleDraftNumberChange(event.target.value, (next) =>
+                            handleDraftNumberChange(event.target.value, (next) => {
+                              setWidgetExampleDeviceType('')
+                              setWidgetExampleDescription('')
                               setDraft((prev) => ({
                                 ...prev,
                                 widgetValue: next,
-                              })),
-                            )
+                              }))
+                            })
                           }
                           className='input w-24'
                         />
                       </div>
+                      {widgetExampleDescription && (
+                        <p className='flex flex-wrap items-center gap-2 rounded-lg border border-signal-500/40 bg-signal-500/10 px-3 py-2 text-sm text-signal-400'>
+                          {widgetExampleDeviceType && (
+                            <span className='chip border-signal-500/45 bg-signal-500/15 text-[11px] uppercase text-signal-300'>
+                              {widgetExampleDeviceType}
+                            </span>
+                          )}
+                          {widgetExampleDescription}
+                        </p>
+                      )}
                     </div>
                   )}
 
@@ -685,8 +759,14 @@ export const CommandSequenceAddModal = ({
             )}
           </div>
         </div>
+        </div>
       </div>
-    </div>,
+      <WidgetValueExampleModal
+        open={widgetExampleModalOpen}
+        onClose={() => setWidgetExampleModalOpen(false)}
+        onPick={handleWidgetExamplePick}
+      />
+    </>,
     document.body,
   )
 }
