@@ -1,3 +1,5 @@
+
+
 # PSDK Debug Front
 
 针对 **大疆上云 API（Cloud API）PSDK 负载** 的前端快速调试工具。
@@ -98,10 +100,10 @@ npm run lint
 
 项目支持两类控件配置来源：
 
-- 内置配置：放置在 `public/widget-configs/`
-- 自定义配置：在页面中上传 `widget_config.json`
+- **内置配置**：放置在 `public/widget-configs/`
+- **自定义配置**：在页面中上传 `widget_config.json`
 
-内置配置文件命名约定：
+### 内置配置文件命名约定
 
 - `{deviceType}_widget_config.json`
 
@@ -110,6 +112,8 @@ npm run lint
 - `JZ_t30s_widget_config.json`
 - `JZ_t40s_widget_config.json`
 
+### 注册表自动生成
+
 运行 `dev/build/preview` 前会自动执行脚本生成注册表：
 
 - 脚本：`scripts/generate-widget-config-registry.mjs`
@@ -117,14 +121,33 @@ npm run lint
 
 ## 项目结构
 
-```text
+```
 src/
-  components/app/      # 主要调试面板
-  hooks/useMqtt.ts     # MQTT 连接与收发封装
-  lib/                 # topic 构建、widget 配置解析等工具
-  types/               # PSDK 相关类型定义
-public/widget-configs/ # 内置 widget 配置
-scripts/               # 构建前辅助脚本
+  ├── components/app/          # 主要调试面板
+  │   ├── CommandResultsPanel.tsx   # 指令回包结果展示
+  │   ├── ConnectionPanel.tsx       # 连接状态管理
+  │   ├── FloatingWindowPanel.tsx   # 浮窗文本显示
+  │   ├── LiveStatusPanel.tsx       # 实时状态监控
+  │   ├── PsdkStatePanel.tsx        # PSDK 状态面板
+  │   ├── SpeakerControlPanel.tsx   # 扬声器控制面板
+  │   ├── WidgetValueExampleModal.tsx # 控件值示例弹窗
+  │   ├── ui.tsx                    # UI 组件
+  │   └── view-helpers.ts           # 视图辅助函数
+  ├── hooks/
+  │   └── useMqtt.ts           # MQTT 连接与收发封装
+  ├── lib/
+  │   ├── id.ts                # ID 生成工具
+  │   ├── psdk.ts              # PSDK 相关工具函数
+  │   └── widgetConfig.ts      # Widget 配置解析
+  ├── types/
+  │   └── psdk.ts              # PSDK 相关类型定义
+  ├── App.tsx                  # 主应用组件
+  ├── main.tsx                 # 应用入口
+  └── index.css                # 全局样式
+public/
+  └── widget-configs/          # 内置 widget 配置
+scripts/
+  └── generate-widget-config-registry.mjs  # 注册表生成脚本
 ```
 
 ## 已知规划
