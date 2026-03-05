@@ -122,6 +122,43 @@ interface DerivedStepViewModel {
   effectiveWaitMs: number
 }
 
+interface StepSummaryEntry {
+  key: string
+  value: string
+  mono: boolean
+}
+
+const SUMMARY_MONO_KEYS = new Set(['md5', 'tid', 'url'])
+
+const parseStepSummaryEntries = (summary: string): StepSummaryEntry[] => {
+  const normalized = summary.trim()
+  if (!normalized || normalized === 'N/A') return []
+
+  return normalized
+    .split('|')
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .map((segment, index) => {
+      const separatorIndex = segment.indexOf('=')
+      if (separatorIndex < 0) {
+        return {
+          key: `arg${index + 1}`,
+          value: segment,
+          mono: false,
+        }
+      }
+
+      const key = segment.slice(0, separatorIndex).trim() || `arg${index + 1}`
+      const value = segment.slice(separatorIndex + 1).trim() || 'N/A'
+
+      return {
+        key,
+        value,
+        mono: SUMMARY_MONO_KEYS.has(key),
+      }
+    })
+}
+
 export const CommandSequencePanel = ({
   steps,
   results,
@@ -370,6 +407,7 @@ export const CommandSequencePanel = ({
             const isFailedAndFocused =
               failureDetails && failureDetails.stepNumber === item.index + 1
             const cardTone = getStepCardTone(item.status)
+            const summaryEntries = parseStepSummaryEntries(item.step.summary)
 
             return (
               <div
@@ -430,20 +468,64 @@ export const CommandSequencePanel = ({
                   </div>
                 </div>
 
-                <div className='mt-3 grid gap-2 text-xs text-steel-300 sm:grid-cols-2 xl:grid-cols-4'>
-                  <span className='rounded-full border border-steel-700/70 px-3 py-1 text-steel-200'>
-                    {item.step.summary}
-                  </span>
-                  <span className='rounded-full border border-steel-700/70 px-3 py-1 text-steel-300'>
-                    wait {formatWaitLabel(item.effectiveWaitMs)}
-                    {item.usesDefaultWait ? ' (default)' : ''}
-                  </span>
-                  <span className='rounded-full border border-steel-700/70 px-3 py-1 text-steel-400'>
-                    result {item.result.result ?? 'N/A'}
-                  </span>
-                  <span className='rounded-full border border-steel-700/70 px-3 py-1 font-mono text-[11px] text-steel-500'>
-                    tid {item.result.tid ? formatShortTid(item.result.tid) : 'N/A'}
-                  </span>
+                <div className='mt-3 space-y-2 text-xs text-steel-300'>
+                  <div className='rounded-lg border border-steel-700/65 bg-coal-900/35 p-3'>
+                    <p className='text-[10px] uppercase tracking-[0.18em] text-steel-500'>
+                      Command detail
+                    </p>
+                    {summaryEntries.length > 0 ? (
+                      <div className='mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4'>
+                        {summaryEntries.map((entry) => (
+                          <div
+                            key={`${item.step.id}-${entry.key}-${entry.value}`}
+                            className='min-w-0 rounded-md border border-steel-700/55 bg-coal-950/35 px-2 py-1.5'
+                          >
+                            <p className='text-[10px] uppercase tracking-[0.14em] text-steel-500'>
+                              {entry.key}
+                            </p>
+                            <p
+                              className={`mt-1 break-all leading-5 text-steel-200 ${
+                                entry.mono ? 'font-mono text-[11px]' : 'text-xs'
+                              }`}
+                              title={entry.value}
+                            >
+                              {entry.value}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className='mt-2 text-xs text-steel-400'>N/A</p>
+                    )}
+                  </div>
+
+                  <div className='grid gap-2 sm:grid-cols-2 xl:grid-cols-3'>
+                    <div className='rounded-lg border border-steel-700/70 px-3 py-2'>
+                      <p className='text-[10px] uppercase tracking-[0.14em] text-steel-500'>
+                        Wait
+                      </p>
+                      <p className='mt-1 text-xs text-steel-200'>
+                        {formatWaitLabel(item.effectiveWaitMs)}
+                        {item.usesDefaultWait ? ' (default)' : ''}
+                      </p>
+                    </div>
+                    <div className='rounded-lg border border-steel-700/70 px-3 py-2'>
+                      <p className='text-[10px] uppercase tracking-[0.14em] text-steel-500'>
+                        Result
+                      </p>
+                      <p className='mt-1 text-xs text-steel-300'>
+                        {item.result.result ?? 'N/A'}
+                      </p>
+                    </div>
+                    <div className='rounded-lg border border-steel-700/70 px-3 py-2'>
+                      <p className='text-[10px] uppercase tracking-[0.14em] text-steel-500'>
+                        TID
+                      </p>
+                      <p className='mt-1 font-mono text-[11px] text-steel-400'>
+                        {item.result.tid ? formatShortTid(item.result.tid) : 'N/A'}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
             )
