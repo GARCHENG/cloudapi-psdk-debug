@@ -527,7 +527,7 @@ export const CommandSequenceAddModal = ({
                           onClick={handleFillDefaultAudioDraft}
                           type='button'
                         >
-                          default
+                          e.g.
                         </button>
                       </div>
                       <input

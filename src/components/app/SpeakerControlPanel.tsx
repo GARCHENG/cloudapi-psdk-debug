@@ -352,7 +352,7 @@ export const SpeakerControlPanel = ({
               Audio Play Start
             </p>
             <button className="btn" onClick={handleFillDefaultAudioPlay}>
-              default
+              e.g.
             </button>
           </div>
           <div className="mt-3 grid flex-1 gap-3">
