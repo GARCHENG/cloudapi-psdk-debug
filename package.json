@@ -6,7 +6,7 @@
   "main": "out/main/index.js",
   "scripts": {
     "predev": "node scripts/generate-widget-config-registry.mjs",
-    "dev": "vite",
+    "dev": "vite --host",
     "predev:desktop": "node scripts/generate-widget-config-registry.mjs",
     "dev:desktop": "electron-vite dev",
     "prebuild": "node scripts/generate-widget-config-registry.mjs",
