@@ -1,8 +1,11 @@
 import { SectionHeader, StatusBadge } from './ui'
+import { getMqttStatusLabel, getText } from '../../lib/i18n'
+import type { AppLanguage } from '../../types/app'
 import type { MqttStatus } from '../../hooks/useMqtt'
 import { mqttStatusTone } from './view-helpers'
 
 interface ConnectionPanelProps {
+  language: AppLanguage
   status: MqttStatus
   error: string | null
   desktopConfigHint: string | null
@@ -27,6 +30,7 @@ interface ConnectionPanelProps {
 }
 
 export const ConnectionPanel = ({
+  language,
   status,
   error,
   desktopConfigHint,
@@ -49,32 +53,43 @@ export const ConnectionPanel = ({
   clientId,
   canConnect,
 }: ConnectionPanelProps) => {
+  const text = getText(language)
+  const panelText = text.connection
+
   return (
     <section className='panel'>
       <div className='w-full'>
-        <SectionHeader title='Connection' subtitle='MQTT / Identity' />
+        <SectionHeader
+          title={panelText.title}
+          subtitle={panelText.subtitle}
+          language={language}
+        />
       </div>
 
       {connectionCollapsed ? (
         <div className='mt-6 rounded-xl border border-steel-700/55 bg-coal-900/55 p-3'>
           <div className='flex flex-wrap items-center gap-2'>
-            <StatusBadge label={`MQTT ${status}`} tone={mqttStatusTone[status]} />
+            <StatusBadge
+              label={`MQTT ${getMqttStatusLabel(language, status)}`}
+              tone={mqttStatusTone[status]}
+              language={language}
+            />
             <span className='chip border-signal-500/40 text-signal-400'>
-              Connection Stable
+              {panelText.stable}
             </span>
             <button
               className='btn btn-danger ml-auto'
               onClick={() => setMqttEnabled(false)}
               disabled={!mqttEnabled}
             >
-              Disconnect
+              {panelText.disconnect}
             </button>
           </div>
 
           <div className='mt-3 grid gap-2 sm:grid-cols-2'>
             <div className='rounded-lg border border-steel-700/60 bg-coal-950/40 px-3 py-2'>
               <p className='text-[11px] uppercase tracking-[0.2em] text-steel-500'>
-                Broker
+                {panelText.broker}
               </p>
               <p className='mt-1 break-all text-sm text-steel-100' title={brokerUrl}>
                 {brokerUrl}
@@ -83,7 +98,7 @@ export const ConnectionPanel = ({
 
             <div className='rounded-lg border border-steel-700/60 bg-coal-950/40 px-3 py-2'>
               <p className='text-[11px] uppercase tracking-[0.2em] text-steel-500'>
-                Gateway SN
+                {panelText.gatewaySn}
               </p>
               <p className='mt-1 break-all text-sm text-steel-100' title={gatewaySn}>
                 {gatewaySn}
@@ -92,7 +107,7 @@ export const ConnectionPanel = ({
 
             <div className='rounded-lg border border-steel-700/60 bg-coal-950/40 px-3 py-2'>
               <p className='text-[11px] uppercase tracking-[0.2em] text-steel-500'>
-                Client ID
+                {panelText.clientId}
               </p>
               <p
                 className='mt-1 break-all font-mono text-xs text-steel-200'
@@ -104,7 +119,7 @@ export const ConnectionPanel = ({
 
             <div className='rounded-lg border border-steel-700/60 bg-coal-950/40 px-3 py-2'>
               <p className='text-[11px] uppercase tracking-[0.2em] text-steel-500'>
-                Device SN
+                {panelText.deviceSn}
               </p>
               <p className='mt-1 break-all text-sm text-steel-100' title={deviceSn}>
                 {deviceSn}
@@ -113,60 +128,60 @@ export const ConnectionPanel = ({
           </div>
 
           <p className='mt-3 text-xs text-steel-500'>
-            Subscribed topics: events, state, services_reply
+            {panelText.subscribedTopics}
           </p>
         </div>
       ) : (
         <>
           <div className='mt-6 grid gap-4 md:grid-cols-2'>
             <div>
-              <label className='label'>Broker URL</label>
+              <label className='label'>{panelText.brokerUrlLabel}</label>
               <input
                 className='input mt-2'
                 value={brokerUrl}
                 onChange={(event) => setBrokerUrl(event.target.value)}
-                placeholder='ws://broker/mqtt'
+                placeholder={panelText.brokerPlaceholder}
               />
             </div>
             <div>
-              <label className='label'>Gateway SN</label>
+              <label className='label'>{panelText.gatewaySnLabel}</label>
               <input
                 className='input mt-2'
                 value={gatewaySn}
                 onChange={(event) => setGatewaySn(event.target.value)}
-                placeholder='Gateway serial'
+                placeholder={panelText.gatewayPlaceholder}
               />
             </div>
             <div>
-              <label className='label'>Username</label>
+              <label className='label'>{panelText.usernameLabel}</label>
               <input
                 className='input mt-2'
                 value={mqttUsername}
                 onChange={(event) => setMqttUsername(event.target.value)}
-                placeholder='MQTT username'
+                placeholder={panelText.usernamePlaceholder}
               />
             </div>
             <div>
-              <label className='label'>Device SN</label>
+              <label className='label'>{panelText.deviceSnLabel}</label>
               <input
                 className='input mt-2'
                 value={deviceSn}
                 onChange={(event) => setDeviceSn(event.target.value)}
-                placeholder='Device serial'
+                placeholder={panelText.devicePlaceholder}
               />
             </div>
             <div>
-              <label className='label'>Password</label>
+              <label className='label'>{panelText.passwordLabel}</label>
               <input
                 className='input mt-2'
                 type='password'
                 value={mqttPassword}
                 onChange={(event) => setMqttPassword(event.target.value)}
-                placeholder='MQTT password'
+                placeholder={panelText.passwordPlaceholder}
               />
             </div>
             <div>
-              <label className='label'>PSDK Index</label>
+              <label className='label'>{panelText.psdkIndexLabel}</label>
               <input
                 className='input mt-2'
                 type='number'
@@ -181,12 +196,14 @@ export const ConnectionPanel = ({
               />
             </div>
             <div className='flex flex-col justify-between'>
-              <span className='label'>Client ID</span>
+              <span className='label'>{panelText.clientIdLabel}</span>
               <div className='mt-2 flex flex-wrap items-center gap-2'>
                 <span className='chip font-mono text-[11px] text-steel-200'>
                   {clientId}
                 </span>
-                <span className='text-xs text-steel-500'>Auto-generated</span>
+                <span className='text-xs text-steel-500'>
+                  {panelText.autoGenerated}
+                </span>
               </div>
             </div>
           </div>
@@ -196,17 +213,17 @@ export const ConnectionPanel = ({
               onClick={onConnect}
               disabled={!canConnect || mqttEnabled}
             >
-              Connect
+              {panelText.connect}
             </button>
             <button
               className='btn btn-danger'
               onClick={() => setMqttEnabled(false)}
               disabled={!mqttEnabled}
             >
-              Disconnect
+              {panelText.disconnect}
             </button>
             <span className='text-xs text-steel-500'>
-              Subscribed topics: events, state, services_reply
+              {panelText.subscribedTopics}
             </span>
           </div>
         </>
@@ -214,7 +231,7 @@ export const ConnectionPanel = ({
 
       {status === 'error' && (
         <div className='mt-4 rounded-lg border border-warn-500/40 bg-warn-500/10 px-4 py-2 text-sm text-warn-500'>
-          MQTT connection failed: {error ?? 'Please verify broker and credentials.'}
+          {panelText.mqttConnectionFailed(error)}
         </div>
       )}
 

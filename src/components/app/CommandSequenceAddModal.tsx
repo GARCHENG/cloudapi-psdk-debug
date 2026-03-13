@@ -1,7 +1,9 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { InlineSpinner, SectionHeader } from './ui'
-import { COMMAND_METHOD_LABELS } from './view-helpers'
+import { resolveCommandMethodLabel } from './view-helpers'
+import { getText } from '../../lib/i18n'
+import type { AppLanguage } from '../../types/app'
 import {
   WidgetValueExampleModal,
   type WidgetExamplePick,
@@ -25,6 +27,7 @@ const DEFAULT_AUDIO_PLAY_URL = import.meta.env.VITE_AUDIO_PLAY_DEFAULT_URL ?? ''
 const DEFAULT_AUDIO_PLAY_MD5 = import.meta.env.VITE_AUDIO_PLAY_DEFAULT_MD5 ?? ''
 
 interface CommandSequenceAddModalProps {
+  language: AppLanguage
   locked: boolean
   defaults: CommandSequenceDefaults
   onDefaultsChange: (next: CommandSequenceDefaults) => void
@@ -48,12 +51,17 @@ const METHOD_LIST: PsdkCommandMethod[] = [
 ]
 
 export const CommandSequenceAddModal = ({
+  language,
   locked,
   defaults,
   onDefaultsChange,
   onAddStep,
   onClose,
 }: CommandSequenceAddModalProps) => {
+  const text = getText(language)
+  const sequenceText = text.sequence
+  const speakerText = text.speaker
+  const common = text.common
   const [selectedMethod, setSelectedMethod] = useState<PsdkCommandMethod | null>(
     null,
   )
@@ -192,20 +200,20 @@ export const CommandSequenceAddModal = ({
       case 'URL_REQUIRED':
       case 'INVALID_URL':
       case 'INVALID_PROTOCOL':
-        return `URL/protocol validation failed: ${audioValidation.message}`
+        return `${speakerText.validationPrefixUrl}: ${audioValidation.message}`
       case 'INVALID_WAV_HEADER':
       case 'UNSUPPORTED_WAV_FORMAT':
       case 'CHANNELS_MISMATCH':
       case 'SAMPLE_RATE_MISMATCH':
       case 'BITS_PER_SAMPLE_MISMATCH':
-        return `PCM format validation failed: ${audioValidation.message}`
+        return `${speakerText.validationPrefixPcm}: ${audioValidation.message}`
       case 'MD5_REQUIRED':
       case 'MD5_MISMATCH':
-        return `MD5 validation failed: ${audioValidation.message}`
+        return `${speakerText.validationPrefixMd5}: ${audioValidation.message}`
       case 'NETWORK_ERROR':
       case 'HTTP_ERROR':
       case 'MD5_CALCULATION_FAILED':
-        return `Network/CORS validation error: ${audioValidation.message}`
+        return `${speakerText.validationPrefixNetwork}: ${audioValidation.message}`
       default:
         return audioValidation.message
     }
@@ -264,10 +272,12 @@ export const CommandSequenceAddModal = ({
 
   const validateDraft = (method: PsdkCommandMethod) => {
     if (!Number.isFinite(draft.psdkIndex) || draft.psdkIndex < 0) {
-      return 'PSDK index is required.'
+      return language === 'zh-CN' ? 'PSDK Index 为必填项。' : 'PSDK index is required.'
     }
     if (!Number.isFinite(draft.waitSeconds) || draft.waitSeconds < 0) {
-      return 'Wait seconds must be 0 or greater.'
+      return language === 'zh-CN'
+        ? '等待秒数必须大于或等于 0。'
+        : 'Wait seconds must be 0 or greater.'
     }
     if (method === 'speaker_audio_play_start') {
       if (
@@ -275,10 +285,14 @@ export const CommandSequenceAddModal = ({
         !draft.audioUrl.trim() ||
         !draft.audioMd5.trim()
       ) {
-        return 'Audio name, URL, and MD5 are required.'
+        return language === 'zh-CN'
+          ? '音频名称、URL 与 MD5 为必填项。'
+          : 'Audio name, URL, and MD5 are required.'
       }
       if (audioValidation.status === 'validating') {
-        return 'Validating URL, PCM metadata, and MD5...'
+        return language === 'zh-CN'
+          ? '正在校验 URL、PCM 元数据与 MD5...'
+          : 'Validating URL, PCM metadata, and MD5...'
       }
       if (
         audioValidation.status !== 'valid' ||
@@ -289,28 +303,38 @@ export const CommandSequenceAddModal = ({
     }
     if (method === 'speaker_tts_play_start') {
       if (!draft.ttsName.trim() || !draft.ttsText.trim() || !draft.ttsMd5.trim()) {
-        return 'TTS name, text, and MD5 are required.'
+        return language === 'zh-CN'
+          ? 'TTS 名称、文本与 MD5 为必填项。'
+          : 'TTS name, text, and MD5 are required.'
       }
     }
     if (method === 'psdk_input_box_text_set') {
       if (!draft.inputBoxText.trim()) {
-        return 'Input box text is required.'
+        return language === 'zh-CN'
+          ? '输入框文本为必填项。'
+          : 'Input box text is required.'
       }
       if (inputBoxTextBytes > 128) {
-        return 'Input box text exceeds 128 bytes.'
+        return language === 'zh-CN'
+          ? '输入框文本超过 128 字节。'
+          : 'Input box text exceeds 128 bytes.'
       }
     }
     if (method === 'psdk_widget_value_set') {
       if (!Number.isInteger(draft.widgetIndex) || draft.widgetIndex < 0) {
-        return 'Widget index must be a non-negative integer.'
+        return language === 'zh-CN'
+          ? 'Widget 索引必须是大于等于 0 的整数。'
+          : 'Widget index must be a non-negative integer.'
       }
       if (!Number.isInteger(draft.widgetValue)) {
-        return 'Widget value must be an integer.'
+        return language === 'zh-CN'
+          ? 'Widget 值必须是整数。'
+          : 'Widget value must be an integer.'
       }
     }
     if (method === 'speaker_play_volume_set') {
       if (!Number.isFinite(draft.playVolume)) {
-        return 'Play volume is required.'
+        return language === 'zh-CN' ? '播放音量为必填项。' : 'Play volume is required.'
       }
     }
     return null
@@ -369,15 +393,19 @@ export const CommandSequenceAddModal = ({
           onClick={(event) => event.stopPropagation()}
         >
         <div className='flex flex-wrap items-start justify-between gap-4'>
-          <SectionHeader title='Add Sequence Step' subtitle='Sequence Builder' />
+          <SectionHeader
+            title={text.sequence.addStep}
+            subtitle={language === 'zh-CN' ? '序列构建' : 'Sequence Builder'}
+            language={language}
+          />
           <button className='btn btn-danger' onClick={onClose} type='button'>
-            Close
+            {common.close}
           </button>
         </div>
 
         <div className='mt-6 grid gap-4 lg:grid-cols-[240px_1fr]'>
           <div className='rounded-xl border border-steel-700/45 bg-coal-900/60 p-4'>
-            <p className='label'>Commands</p>
+            <p className='label'>{text.speaker.subtitle}</p>
             <div className='mt-3 grid gap-2'>
               {METHOD_LIST.map((method) => (
                 <button
@@ -404,7 +432,7 @@ export const CommandSequenceAddModal = ({
                   }}
                   type='button'
                 >
-                  {COMMAND_METHOD_LABELS[method]}
+                  {resolveCommandMethodLabel(method, language)}
                 </button>
               ))}
             </div>
@@ -413,13 +441,15 @@ export const CommandSequenceAddModal = ({
           <div className='rounded-xl border border-steel-700/45 bg-coal-900/60 p-4'>
             {!selectedMethod ? (
               <div className='rounded-lg border border-dashed border-steel-700/60 bg-coal-900/35 px-4 py-6 text-sm text-steel-400'>
-                Select a command to configure its parameters and add a step card.
+                {language === 'zh-CN'
+                  ? '请选择命令并配置参数，然后添加步骤卡片。'
+                  : 'Select a command to configure its parameters and add a step card.'}
               </div>
             ) : (
               <div className='space-y-4'>
                 <div className='flex flex-wrap items-center gap-2'>
                   <span className='text-sm text-steel-100'>
-                    {COMMAND_METHOD_LABELS[selectedMethod]}
+                    {resolveCommandMethodLabel(selectedMethod, language)}
                   </span>
                   <span className='chip border-steel-600/70 bg-transparent text-[11px] text-steel-300'>
                     {selectedMethod}
@@ -428,7 +458,7 @@ export const CommandSequenceAddModal = ({
 
                 <div className='grid gap-3'>
                   <div className='flex flex-wrap items-center gap-3'>
-                    <label className='label m-0'>PSDK Index</label>
+                    <label className='label m-0'>{text.connection.psdkIndexLabel}</label>
                     <input
                       className='input w-28'
                       min={0}
@@ -443,7 +473,7 @@ export const CommandSequenceAddModal = ({
                     />
                   </div>
                   <div className='flex flex-wrap items-center gap-3'>
-                    <label className='label m-0'>Wait (sec)</label>
+                    <label className='label m-0'>{sequenceText.defaultWaitSeconds}</label>
                     <input
                       className='input w-28'
                       min={0}
@@ -470,7 +500,7 @@ export const CommandSequenceAddModal = ({
                             setDraft((prev) => ({ ...prev, playMode: 0 }))
                           }
                         />
-                        Single
+                        {speakerText.single}
                       </label>
                       <label className='flex items-center gap-2'>
                         <input
@@ -480,7 +510,7 @@ export const CommandSequenceAddModal = ({
                             setDraft((prev) => ({ ...prev, playMode: 1 }))
                           }
                         />
-                        Loop
+                        {speakerText.loop}
                       </label>
                     </div>
                   )}
@@ -521,13 +551,13 @@ export const CommandSequenceAddModal = ({
                   {selectedMethod === 'speaker_audio_play_start' && (
                     <div className='grid gap-3'>
                       <div className='flex flex-wrap items-center justify-between gap-3'>
-                        <p className='label m-0'>Audio Play Start</p>
+                        <p className='label m-0'>{speakerText.audioPlayStart}</p>
                         <button
                           className='btn h-8 px-3 text-xs'
                           onClick={handleFillDefaultAudioDraft}
                           type='button'
                         >
-                          e.g.
+                          {speakerText.example}
                         </button>
                       </div>
                       <input
@@ -539,7 +569,7 @@ export const CommandSequenceAddModal = ({
                             audioName: event.target.value,
                           }))
                         }
-                        placeholder='File name'
+                        placeholder={speakerText.fileNamePlaceholder}
                       />
                       <input
                         className='input'
@@ -547,7 +577,7 @@ export const CommandSequenceAddModal = ({
                         onChange={(event) =>
                           handleAudioUrlDraftChange(event.target.value)
                         }
-                        placeholder='File URL (PCM)'
+                        placeholder={speakerText.fileUrlPlaceholder}
                       />
                       <input
                         className='input'
@@ -555,7 +585,7 @@ export const CommandSequenceAddModal = ({
                         onChange={(event) =>
                           handleAudioMd5DraftChange(event.target.value)
                         }
-                        placeholder='File MD5'
+                        placeholder={speakerText.fileMd5Placeholder}
                       />
                       {showAudioValidation && (
                         <p
@@ -580,10 +610,10 @@ export const CommandSequenceAddModal = ({
                           {pendingAudioValidation ? (
                             <>
                               <InlineSpinner />
-                              Validating...
+                              {speakerText.validating}
                             </>
                           ) : (
-                            'Validate Audio'
+                            speakerText.validateAudio
                           )}
                         </button>
                       </div>
@@ -601,7 +631,7 @@ export const CommandSequenceAddModal = ({
                             ttsName: event.target.value,
                           }))
                         }
-                        placeholder='TTS name'
+                        placeholder={speakerText.ttsNamePlaceholder}
                       />
                       <textarea
                         className='textarea h-24'
@@ -612,7 +642,7 @@ export const CommandSequenceAddModal = ({
                             ttsText: event.target.value,
                           }))
                         }
-                        placeholder='TTS text'
+                        placeholder={speakerText.ttsTextPlaceholder}
                       />
                       <input
                         className='input'
@@ -623,7 +653,7 @@ export const CommandSequenceAddModal = ({
                             ttsMd5: event.target.value,
                           }))
                         }
-                        placeholder='TTS MD5'
+                        placeholder={speakerText.ttsMd5Placeholder}
                       />
                     </div>
                   )}
@@ -640,10 +670,10 @@ export const CommandSequenceAddModal = ({
                             inputBoxText: event.target.value,
                           }))
                         }
-                        placeholder='Input box content (max 128 bytes/chars)'
+                        placeholder={speakerText.inputBoxPlaceholder}
                       />
                       <p className='text-xs text-steel-400'>
-                        Bytes: {inputBoxTextBytes}/128
+                        {speakerText.bytesLabel(inputBoxTextBytes, 128)}
                       </p>
                     </div>
                   )}
@@ -651,17 +681,17 @@ export const CommandSequenceAddModal = ({
                   {selectedMethod === 'psdk_widget_value_set' && (
                     <div className='grid gap-3'>
                       <div className='flex flex-wrap items-center justify-between gap-3'>
-                        <p className='label m-0'>Widget Value Set</p>
+                        <p className='label m-0'>{speakerText.widgetValueSet}</p>
                         <button
                           className='btn h-8 px-3 text-xs'
                           onClick={() => setWidgetExampleModalOpen(true)}
                           type='button'
                         >
-                          e.g.
+                          {speakerText.example}
                         </button>
                       </div>
                       <div className='flex flex-wrap items-center gap-3'>
-                        <label className='label m-0'>Widget Index</label>
+                        <label className='label m-0'>{speakerText.widgetIndex}</label>
                         <input
                           type='number'
                           min={0}
@@ -685,7 +715,7 @@ export const CommandSequenceAddModal = ({
                         />
                       </div>
                       <div className='flex flex-wrap items-center gap-3'>
-                        <label className='label m-0'>Widget Value</label>
+                        <label className='label m-0'>{speakerText.widgetValue}</label>
                         <input
                           type='number'
                           value={
@@ -722,7 +752,7 @@ export const CommandSequenceAddModal = ({
                   {(selectedMethod === 'speaker_replay' ||
                     selectedMethod === 'speaker_play_stop') && (
                     <p className='text-xs text-steel-400'>
-                      No additional parameters required.
+                      {sequenceText.noAdditionalParams}
                     </p>
                   )}
                 </div>
@@ -744,15 +774,15 @@ export const CommandSequenceAddModal = ({
                   >
                     {selectedMethod === 'speaker_audio_play_start' &&
                     pendingAudioValidation
-                      ? 'Validating...'
-                      : 'Add To Sequence'}
+                      ? speakerText.validating
+                      : sequenceText.addToSequence}
                   </button>
                   <button
                     className='btn'
                     onClick={() => setSelectedMethod(null)}
                     type='button'
                   >
-                    Choose Another
+                    {sequenceText.chooseAnother}
                   </button>
                 </div>
               </div>
@@ -762,6 +792,7 @@ export const CommandSequenceAddModal = ({
         </div>
       </div>
       <WidgetValueExampleModal
+        language={language}
         open={widgetExampleModalOpen}
         onClose={() => setWidgetExampleModalOpen(false)}
         onPick={handleWidgetExamplePick}

@@ -2,10 +2,12 @@ import { useMemo, useState } from 'react'
 import { InlineSpinner, SectionHeader } from './ui'
 import {
   commandStatusTone,
-  COMMAND_METHOD_LABELS,
   formatShortTid,
+  resolveCommandMethodLabel,
 } from './view-helpers'
 import { CommandSequenceAddModal } from './CommandSequenceAddModal'
+import { getText } from '../../lib/i18n'
+import type { AppLanguage } from '../../types/app'
 import type {
   CommandSequenceDefaults,
   CommandSequenceStep,
@@ -22,6 +24,7 @@ type SequenceWaitState = {
 }
 
 interface CommandSequencePanelProps {
+  language: AppLanguage
   steps: CommandSequenceStep[]
   results: SequenceStepResult[]
   status: SequenceRunStatus
@@ -52,8 +55,17 @@ const getStepTone = (status: SequenceStepStatus) => {
   return commandStatusTone[status]
 }
 
-const getStepLabel = (status: SequenceStepStatus) => {
-  if (status === 'timeout') return 'timeout (10s)'
+const getStepLabel = (status: SequenceStepStatus, language: AppLanguage) => {
+  if (status === 'timeout') {
+    return language === 'zh-CN' ? '超时（10 秒）' : 'timeout (10s)'
+  }
+  if (language === 'zh-CN') {
+    if (status === 'pending') return '等待中'
+    if (status === 'success') return '成功'
+    if (status === 'failure') return '失败'
+    if (status === 'skipped') return '已跳过'
+    return '空闲'
+  }
   return status
 }
 
@@ -77,6 +89,7 @@ const getRunStatusTone = (status: SequenceRunStatus) => {
 }
 
 const getRunStatusLabel = (
+  language: AppLanguage,
   status: SequenceRunStatus,
   activeIndex: number | null,
   totalSteps: number,
@@ -84,14 +97,22 @@ const getRunStatusLabel = (
 ) => {
   if (status === 'running') {
     if (activeIndex !== null && totalSteps > 0) {
-      return `Running step ${activeIndex + 1}/${totalSteps}`
+      return language === 'zh-CN'
+        ? `正在执行步骤 ${activeIndex + 1}/${totalSteps}`
+        : `Running step ${activeIndex + 1}/${totalSteps}`
     }
-    return 'Running'
+    return language === 'zh-CN' ? '运行中' : 'Running'
   }
-  if (status === 'success') return 'Completed successfully'
-  if (status === 'failure') return failureSummary ?? 'Failed'
-  if (status === 'stopped') return 'Stopped by user'
-  return 'Idle'
+  if (status === 'success') {
+    return language === 'zh-CN' ? '执行成功' : 'Completed successfully'
+  }
+  if (status === 'failure') {
+    return failureSummary ?? (language === 'zh-CN' ? '执行失败' : 'Failed')
+  }
+  if (status === 'stopped') {
+    return language === 'zh-CN' ? '已手动停止' : 'Stopped by user'
+  }
+  return language === 'zh-CN' ? '空闲' : 'Idle'
 }
 
 const getStepCardTone = (status: SequenceStepStatus) => {
@@ -130,9 +151,12 @@ interface StepSummaryEntry {
 
 const SUMMARY_MONO_KEYS = new Set(['md5', 'tid', 'url'])
 
-const parseStepSummaryEntries = (summary: string): StepSummaryEntry[] => {
+const parseStepSummaryEntries = (
+  summary: string,
+  naText: string,
+): StepSummaryEntry[] => {
   const normalized = summary.trim()
-  if (!normalized || normalized === 'N/A') return []
+  if (!normalized || normalized === 'N/A' || normalized === naText) return []
 
   return normalized
     .split('|')
@@ -149,7 +173,7 @@ const parseStepSummaryEntries = (summary: string): StepSummaryEntry[] => {
       }
 
       const key = segment.slice(0, separatorIndex).trim() || `arg${index + 1}`
-      const value = segment.slice(separatorIndex + 1).trim() || 'N/A'
+      const value = segment.slice(separatorIndex + 1).trim() || naText
 
       return {
         key,
@@ -160,6 +184,7 @@ const parseStepSummaryEntries = (summary: string): StepSummaryEntry[] => {
 }
 
 export const CommandSequencePanel = ({
+  language,
   steps,
   results,
   status,
@@ -179,6 +204,8 @@ export const CommandSequencePanel = ({
   onRemoveStep,
   onAddStep,
 }: CommandSequencePanelProps) => {
+  const text = getText(language).sequence
+  const common = getText(language).common
   const sequenceLocked = status === 'running'
   const [addOpen, setAddOpen] = useState(false)
   const [expandedStepId, setExpandedStepId] = useState<string | null>(null)
@@ -209,26 +236,33 @@ export const CommandSequencePanel = ({
     })
 
     const failedStep = stepCards.find((item) => item.isFailure)
-    const failureSummary = (() => {
-      if (status !== 'failure') return null
-      if (errorMessage) return errorMessage
-      if (!failedStep) return 'Sequence failed.'
-      const reason =
-        failedStep.status === 'timeout'
-          ? 'timeout (10s)'
-          : `result ${failedStep.result.result ?? 'N/A'}`
-      return `Failed at step ${failedStep.index + 1}/${steps.length}: ${COMMAND_METHOD_LABELS[failedStep.step.method]} (${reason})`
-    })()
+      const failureSummary = (() => {
+        if (status !== 'failure') return null
+        if (errorMessage) return errorMessage
+        if (!failedStep) return language === 'zh-CN' ? '序列执行失败。' : 'Sequence failed.'
+        const reason =
+          failedStep.status === 'timeout'
+            ? language === 'zh-CN'
+              ? '超时（10 秒）'
+              : 'timeout (10s)'
+            : `result ${failedStep.result.result ?? common.na}`
+        const label = resolveCommandMethodLabel(failedStep.step.method, language)
+        return language === 'zh-CN'
+          ? `在步骤 ${failedStep.index + 1}/${steps.length} 失败：${label}（${reason}）`
+          : `Failed at step ${failedStep.index + 1}/${steps.length}: ${label} (${reason})`
+      })()
 
     const waitCountdownLabel =
       waitState && status === 'running'
-        ? `Next step in ${formatWaitLabel(waitState.remainingMs)}`
+        ? language === 'zh-CN'
+          ? `下一个步骤将在 ${formatWaitLabel(waitState.remainingMs)} 后执行`
+          : `Next step in ${formatWaitLabel(waitState.remainingMs)}`
         : null
 
     const currentStepLabel =
       activeIndex !== null && activeIndex >= 0 && activeIndex < steps.length
         ? `${activeIndex + 1}/${steps.length}`
-        : 'N/A'
+        : common.na
 
     const completedCount = stepCards.filter((item) =>
       ['success', 'failure', 'timeout', 'skipped'].includes(item.status),
@@ -241,20 +275,30 @@ export const CommandSequencePanel = ({
       waitCountdownLabel,
       currentStepLabel,
       completedCount,
-      statusLabel: getRunStatusLabel(status, activeIndex, steps.length, failureSummary),
+      statusLabel: getRunStatusLabel(
+        language,
+        status,
+        activeIndex,
+        steps.length,
+        failureSummary,
+      ),
       statusTone: getRunStatusTone(status),
     }
-  }, [activeIndex, defaultWaitSeconds, errorMessage, results, status, steps, waitState])
+  }, [activeIndex, common.na, defaultWaitSeconds, errorMessage, language, results, status, steps, waitState])
 
   const failureDetails = (() => {
     if (status !== 'failure' || !derived.failedStep) return null
     const reason =
       derived.failedStep.status === 'timeout'
-        ? 'No `services_reply` was received within 10 seconds.'
-        : `Received non-zero result: ${derived.failedStep.result.result ?? 'N/A'}.`
+        ? language === 'zh-CN'
+          ? '10 秒内未收到 services_reply。'
+          : 'No `services_reply` was received within 10 seconds.'
+        : language === 'zh-CN'
+          ? `收到非 0 result：${derived.failedStep.result.result ?? common.na}。`
+          : `Received non-zero result: ${derived.failedStep.result.result ?? common.na}.`
     return {
       stepNumber: derived.failedStep.index + 1,
-      methodLabel: COMMAND_METHOD_LABELS[derived.failedStep.step.method],
+      methodLabel: resolveCommandMethodLabel(derived.failedStep.step.method, language),
       method: derived.failedStep.step.method,
       reason,
     }
@@ -272,7 +316,11 @@ export const CommandSequencePanel = ({
   return (
     <section className='panel'>
       <div className='flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between'>
-        <SectionHeader title='Command Sequence' subtitle='services_reply' />
+        <SectionHeader
+          title={text.title}
+          subtitle={text.subtitle}
+          language={language}
+        />
         <div className='grid w-full gap-2 sm:grid-cols-2 xl:w-auto xl:grid-cols-4'>
           <button
             className='btn w-full'
@@ -280,7 +328,7 @@ export const CommandSequencePanel = ({
             disabled={sequenceLocked}
             type='button'
           >
-            Add Step
+            {text.addStep}
           </button>
           <button
             className='btn btn-primary w-full'
@@ -291,7 +339,7 @@ export const CommandSequencePanel = ({
             disabled={!canRun}
             type='button'
           >
-            Run Sequence
+            {text.runSequence}
           </button>
           <button
             className='btn btn-danger w-full'
@@ -299,7 +347,7 @@ export const CommandSequencePanel = ({
             disabled={!sequenceLocked}
             type='button'
           >
-            Stop
+            {text.stop}
           </button>
           <button
             className='btn w-full'
@@ -307,7 +355,7 @@ export const CommandSequencePanel = ({
             disabled={sequenceLocked}
             type='button'
           >
-            Clear
+            {text.clear}
           </button>
         </div>
       </div>
@@ -315,27 +363,31 @@ export const CommandSequencePanel = ({
       <div className='mt-5 rounded-xl border border-steel-700/45 bg-coal-900/50 p-4'>
         <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-5'>
           <div className='rounded-lg border border-steel-700/55 bg-coal-900/55 p-3'>
-            <p className='label m-0'>Total Steps</p>
+            <p className='label m-0'>{text.totalSteps}</p>
             <p className='mt-2 text-lg text-steel-100'>{steps.length}</p>
           </div>
           <div className='rounded-lg border border-steel-700/55 bg-coal-900/55 p-3'>
-            <p className='label m-0'>Current Step</p>
+            <p className='label m-0'>{text.currentStep}</p>
             <p className='mt-2 text-lg text-steel-100'>{derived.currentStepLabel}</p>
           </div>
           <div className='rounded-lg border border-steel-700/55 bg-coal-900/55 p-3'>
-            <p className='label m-0'>Progress</p>
+            <p className='label m-0'>{text.progress}</p>
             <p className='mt-2 text-lg text-steel-100'>{progressPercent}%</p>
           </div>
           <div className='rounded-lg border border-steel-700/55 bg-coal-900/55 p-3'>
-            <p className='label m-0'>Countdown</p>
+            <p className='label m-0'>{text.countdown}</p>
             <p className='mt-2 text-sm text-steel-200'>
-              {derived.waitCountdownLabel ?? 'No wait'}
+              {derived.waitCountdownLabel ?? common.noWait}
             </p>
           </div>
           <div className='rounded-lg border border-steel-700/55 bg-coal-900/55 p-3'>
-            <p className='label m-0'>Stop Request</p>
+            <p className='label m-0'>{text.stopRequest}</p>
             <p className='mt-2 text-sm text-steel-200'>
-              {status === 'running' ? (stopRequested ? 'Requested' : 'Ready') : 'N/A'}
+              {status === 'running'
+                ? stopRequested
+                  ? common.requested
+                  : common.ready
+                : common.na}
             </p>
           </div>
         </div>
@@ -344,7 +396,7 @@ export const CommandSequencePanel = ({
           <span className={`chip ${derived.statusTone}`}>{derived.statusLabel}</span>
           {stopRequested && status === 'running' && (
             <span className='chip border-amber-500/60 bg-amber-500/10 text-amber-400'>
-              Stop requested
+              {text.stopRequested}
             </span>
           )}
           {derived.waitCountdownLabel && (
@@ -353,7 +405,7 @@ export const CommandSequencePanel = ({
             </span>
           )}
           <div className='ml-auto flex items-center gap-2'>
-            <span className='text-xs text-steel-400'>Default wait (sec)</span>
+            <span className='text-xs text-steel-400'>{text.defaultWaitSeconds}</span>
             <input
               className='input h-8 w-24 text-xs'
               min={0}
@@ -371,10 +423,10 @@ export const CommandSequencePanel = ({
         <div className='mt-5 rounded-xl border border-warn-500/45 bg-warn-500/10 p-4 text-sm'>
           <div className='flex flex-wrap items-center gap-2'>
             <span className='chip border-warn-500/50 bg-warn-500/10 text-warn-500'>
-              Failure diagnosis
+              {text.failureDiagnosis}
             </span>
             <span className='text-steel-200'>
-              Step {failureDetails.stepNumber}: {failureDetails.methodLabel}
+              {text.step} {failureDetails.stepNumber}: {failureDetails.methodLabel}
             </span>
             <span className='font-mono text-xs text-steel-300'>
               {failureDetails.method}
@@ -382,7 +434,9 @@ export const CommandSequencePanel = ({
           </div>
           <p className='mt-3 text-steel-200'>{failureDetails.reason}</p>
           {errorMessage && (
-            <p className='mt-2 text-xs text-warn-500'>Detail: {errorMessage}</p>
+            <p className='mt-2 text-xs text-warn-500'>
+              {text.detail}: {errorMessage}
+            </p>
           )}
         </div>
       )}
@@ -390,9 +444,9 @@ export const CommandSequencePanel = ({
       <div className='mt-5 space-y-3'>
         {steps.length === 0 ? (
           <div className='rounded-xl border border-dashed border-steel-700/60 bg-coal-900/35 px-4 py-8 text-center'>
-            <p className='text-sm text-steel-300'>No sequence steps yet.</p>
+            <p className='text-sm text-steel-300'>{text.emptyTitle}</p>
             <p className='mt-1 text-xs text-steel-500'>
-              Build your flow with Add Step, then run it to monitor live status cards.
+              {text.emptyDescription}
             </p>
             <button
               className='btn btn-primary mt-4'
@@ -400,7 +454,7 @@ export const CommandSequencePanel = ({
               disabled={sequenceLocked}
               type='button'
             >
-              Add First Step
+              {text.addFirstStep}
             </button>
           </div>
         ) : (
@@ -408,7 +462,7 @@ export const CommandSequencePanel = ({
             const isFailedAndFocused =
               failureDetails && failureDetails.stepNumber === item.index + 1
             const cardTone = getStepCardTone(item.status)
-            const summaryEntries = parseStepSummaryEntries(item.step.summary)
+            const summaryEntries = parseStepSummaryEntries(item.step.summary, common.na)
             const isExpanded = expandedStepId === item.step.id
 
             return (
@@ -421,10 +475,10 @@ export const CommandSequencePanel = ({
                 <div className='flex flex-wrap items-start gap-3'>
                   <div className='flex flex-wrap items-center gap-2'>
                     <span className='chip border-steel-600/70 bg-transparent text-[11px] text-steel-300'>
-                      Step {item.index + 1}
+                      {text.step} {item.index + 1}
                     </span>
                     <span className='text-steel-100'>
-                      {COMMAND_METHOD_LABELS[item.step.method]}
+                      {resolveCommandMethodLabel(item.step.method, language)}
                     </span>
                     <span className='text-xs text-steel-400'>{item.step.method}</span>
                     <span className={`chip ${getStepTone(item.status)}`}>
@@ -432,12 +486,12 @@ export const CommandSequencePanel = ({
                         <InlineSpinner className='h-3 w-3' />
                       )}
                       {item.isWaiting && item.status === 'success'
-                        ? 'waiting'
-                        : getStepLabel(item.status)}
+                        ? common.waiting
+                        : getStepLabel(item.status, language)}
                     </span>
                     {item.isActive && (
                       <span className='chip border-signal-500/60 bg-signal-500/10 text-signal-400'>
-                        active
+                        {common.active}
                       </span>
                     )}
                   </div>
@@ -454,7 +508,7 @@ export const CommandSequencePanel = ({
                       aria-expanded={isExpanded}
                       aria-controls={`sequence-step-details-${item.step.id}`}
                     >
-                      {isExpanded ? 'Collapse Details' : 'Expand Details'}
+                      {isExpanded ? text.collapseDetails : text.expandDetails}
                     </button>
                     <button
                       className='btn h-8 px-3 text-xs'
@@ -462,7 +516,7 @@ export const CommandSequencePanel = ({
                       disabled={sequenceLocked || item.index === 0}
                       type='button'
                     >
-                      Up
+                      {text.up}
                     </button>
                     <button
                       className='btn h-8 px-3 text-xs'
@@ -470,7 +524,7 @@ export const CommandSequencePanel = ({
                       disabled={sequenceLocked || item.index === steps.length - 1}
                       type='button'
                     >
-                      Down
+                      {text.down}
                     </button>
                     <button
                       className='btn btn-danger h-8 px-3 text-xs'
@@ -478,7 +532,7 @@ export const CommandSequencePanel = ({
                       disabled={sequenceLocked}
                       type='button'
                     >
-                      Remove
+                      {text.remove}
                     </button>
                   </div>
                 </div>
@@ -490,7 +544,7 @@ export const CommandSequencePanel = ({
                   >
                     <div className='rounded-lg border border-steel-700/65 bg-coal-900/35 p-3'>
                       <p className='text-[10px] uppercase tracking-[0.18em] text-steel-500'>
-                        Command detail
+                        {text.commandDetail}
                       </p>
                       {summaryEntries.length > 0 ? (
                         <div className='mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4'>
@@ -514,34 +568,36 @@ export const CommandSequencePanel = ({
                           ))}
                         </div>
                       ) : (
-                        <p className='mt-2 text-xs text-steel-400'>N/A</p>
+                        <p className='mt-2 text-xs text-steel-400'>{common.na}</p>
                       )}
                     </div>
 
                     <div className='grid gap-2 sm:grid-cols-2 xl:grid-cols-3'>
                       <div className='rounded-lg border border-steel-700/70 px-3 py-2'>
                         <p className='text-[10px] uppercase tracking-[0.14em] text-steel-500'>
-                          Wait
+                          {text.wait}
                         </p>
                         <p className='mt-1 text-xs text-steel-200'>
                           {formatWaitLabel(item.effectiveWaitMs)}
-                          {item.usesDefaultWait ? ' (default)' : ''}
+                          {item.usesDefaultWait ? ` ${text.defaultWaitSuffix}` : ''}
                         </p>
                       </div>
                       <div className='rounded-lg border border-steel-700/70 px-3 py-2'>
                         <p className='text-[10px] uppercase tracking-[0.14em] text-steel-500'>
-                          Result
+                          {text.result}
                         </p>
                         <p className='mt-1 text-xs text-steel-300'>
-                          {item.result.result ?? 'N/A'}
+                          {item.result.result ?? common.na}
                         </p>
                       </div>
                       <div className='rounded-lg border border-steel-700/70 px-3 py-2'>
                         <p className='text-[10px] uppercase tracking-[0.14em] text-steel-500'>
-                          TID
+                          {text.tid}
                         </p>
                         <p className='mt-1 font-mono text-[11px] text-steel-400'>
-                          {item.result.tid ? formatShortTid(item.result.tid) : 'N/A'}
+                          {item.result.tid
+                            ? formatShortTid(item.result.tid)
+                            : common.na}
                         </p>
                       </div>
                     </div>
@@ -555,6 +611,7 @@ export const CommandSequencePanel = ({
 
       {addModalOpen && (
         <CommandSequenceAddModal
+          language={language}
           locked={sequenceLocked}
           defaults={defaults}
           onDefaultsChange={onDefaultsChange}

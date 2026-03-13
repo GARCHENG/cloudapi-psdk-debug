@@ -4,35 +4,47 @@ import {
   SectionHeader,
 } from './ui'
 import type { CommandLogEntry } from '../../types/psdk'
+import { getCommandStatusLabel, getText } from '../../lib/i18n'
+import type { AppLanguage } from '../../types/app'
 import {
   commandStatusTone,
   formatProgressLabel,
   formatTimestamp,
   isPlayProgressCommandMethod,
+  resolveCommandMethodLabel,
 } from './view-helpers'
 
 interface CommandResultsPanelProps {
+  language: AppLanguage
   commandLogs: CommandLogEntry[]
   logModalOpen: boolean
   setLogModalOpen: (open: boolean) => void
 }
 
 export const CommandResultsPanel = ({
+  language,
   commandLogs,
   logModalOpen,
   setLogModalOpen,
 }: CommandResultsPanelProps) => {
+  const text = getText(language).commandResults
+  const common = getText(language).common
+
   return (
     <>
       <section className='panel'>
         <div className='flex flex-wrap items-start justify-between gap-4'>
-          <SectionHeader title='Command Results' subtitle='services_reply' />
+          <SectionHeader
+            title={text.title}
+            subtitle={text.subtitle}
+            language={language}
+          />
           <button className='btn' onClick={() => setLogModalOpen(true)}>
-            Log ({commandLogs.length})
+            {text.logButton(commandLogs.length)}
           </button>
         </div>
         <p className='mt-6 text-sm text-steel-400'>
-          Click Log to view command history in a modal.
+          {text.logHint}
         </p>
       </section>
 
@@ -47,12 +59,16 @@ export const CommandResultsPanel = ({
               onClick={(event) => event.stopPropagation()}
             >
               <div className='flex flex-wrap items-start justify-between gap-4'>
-                <SectionHeader title='Command Results' subtitle='services_reply' />
+                <SectionHeader
+                  title={text.title}
+                  subtitle={text.subtitle}
+                  language={language}
+                />
                 <button
                   className='btn btn-danger'
                   onClick={() => setLogModalOpen(false)}
                 >
-                  Close
+                  {common.close}
                 </button>
               </div>
 
@@ -61,12 +77,12 @@ export const CommandResultsPanel = ({
                   <table className='w-full text-left text-xs'>
                     <thead className='bg-coal-900/70 text-steel-400'>
                       <tr>
-                        <th className='px-4 py-3'>Time</th>
-                        <th className='px-4 py-3'>Method</th>
-                        <th className='px-4 py-3'>Status</th>
-                        <th className='px-4 py-3'>Play Progress</th>
-                        <th className='px-4 py-3'>Result</th>
-                        <th className='px-4 py-3'>TID</th>
+                        <th className='px-4 py-3'>{text.time}</th>
+                        <th className='px-4 py-3'>{text.method}</th>
+                        <th className='px-4 py-3'>{text.status}</th>
+                        <th className='px-4 py-3'>{text.playProgress}</th>
+                        <th className='px-4 py-3'>{text.result}</th>
+                        <th className='px-4 py-3'>{text.tid}</th>
                       </tr>
                     </thead>
                     <tbody className='divide-y divide-steel-700/30'>
@@ -76,35 +92,36 @@ export const CommandResultsPanel = ({
                             className='px-4 py-6 text-center text-sm text-steel-400'
                             colSpan={6}
                           >
-                            No commands sent yet.
+                            {text.empty}
                           </td>
                         </tr>
                       ) : (
                         commandLogs.map((entry) => (
                           <tr key={entry.tid}>
                             <td className='px-4 py-3 text-steel-300'>
-                              {formatTimestamp(entry.sentAt)}
+                              {formatTimestamp(entry.sentAt, language)}
                             </td>
                             <td className='px-4 py-3 text-steel-100'>
-                              {entry.method}
+                              <div className='space-y-1'>
+                                <p>{resolveCommandMethodLabel(entry.method, language)}</p>
+                                <p className='text-[11px] text-steel-500'>{entry.method}</p>
+                              </div>
                             </td>
                             <td className='px-4 py-3'>
                               <span className={`chip ${commandStatusTone[entry.status]}`}>
                                 {entry.status === 'pending' && (
                                   <InlineSpinner className='h-3 w-3' />
                                 )}
-                                {entry.status === 'timeout'
-                                  ? 'timeout (10s)'
-                                  : entry.status}
+                                {getCommandStatusLabel(language, entry.status)}
                               </span>
                             </td>
                             <td className='px-4 py-3 text-steel-300'>
                               {isPlayProgressCommandMethod(entry.method)
-                                ? formatProgressLabel(entry.playProgress)
-                                : 'N/A'}
+                                ? formatProgressLabel(entry.playProgress, language)
+                                : common.na}
                             </td>
                             <td className='px-4 py-3 text-steel-300'>
-                              {entry.result ?? 'N/A'}
+                              {entry.result ?? common.na}
                             </td>
                             <td className='px-4 py-3 font-mono text-[11px] text-steel-500'>
                               {entry.tid}

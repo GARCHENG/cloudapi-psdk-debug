@@ -18,6 +18,13 @@ import {
   buildStateTopic,
 } from "./lib/psdk";
 import {
+  getMqttStatusLabel,
+  getOnlineStateLabel,
+  getText,
+  persistLanguage,
+  resolveInitialLanguage,
+} from "./lib/i18n";
+import {
   type ActivePlayProgress,
   type CommandFeedback,
   type CommandFeedbackStatus,
@@ -42,8 +49,8 @@ import {
   REQUIRED_DESKTOP_CONFIG_FIELDS,
   type DesktopConfigPayload,
   type DesktopConfigSource,
-  type RequiredDesktopConfigField,
 } from "./types/desktop";
+import type { AppLanguage } from "./types/app";
 import { CommandResultsPanel } from "./components/app/CommandResultsPanel";
 import { CommandSequencePanel } from "./components/app/CommandSequencePanel";
 import { ConnectionPanel } from "./components/app/ConnectionPanel";
@@ -63,12 +70,6 @@ const DEFAULT_AUDIO_PLAY_URL =
   import.meta.env.VITE_AUDIO_PLAY_DEFAULT_URL ?? "";
 const DEFAULT_AUDIO_PLAY_MD5 =
   import.meta.env.VITE_AUDIO_PLAY_DEFAULT_MD5 ?? "";
-const DESKTOP_REQUIRED_FIELD_LABELS: Record<RequiredDesktopConfigField, string> =
-  {
-    brokerUrl: "Broker URL",
-    gatewaySn: "Gateway SN",
-    deviceSn: "Device SN",
-  };
 
 const SPEAKER_METHODS: SpeakerCommandMethod[] = [
   "speaker_audio_play_start",
@@ -249,6 +250,12 @@ function App() {
     () => typeof window.desktop !== "undefined",
     [],
   );
+  const [language, setLanguage] = useState<AppLanguage>(() =>
+    resolveInitialLanguage(),
+  );
+  const text = useMemo(() => getText(language), [language]);
+  const commonText = text.common;
+  const appText = text.app;
 
   const [psdkIndex, setPsdkIndex] = useState(DEFAULT_PSDK_INDEX);
   const [audioName, setAudioName] = useState("");
@@ -346,6 +353,13 @@ function App() {
       isMounted = false;
     };
   }, [isDesktopRuntime]);
+
+  useEffect(() => {
+    persistLanguage(language);
+    document.documentElement.lang = language;
+    document.documentElement.dataset.language = language;
+    document.body.dataset.language = language;
+  }, [language]);
 
   const eventsTopic = useMemo(
     () => (gatewaySn ? buildEventsTopic(gatewaySn) : ""),
@@ -752,9 +766,9 @@ function App() {
 
     if (missingDesktopRequiredFields.length > 0) {
       const labels = missingDesktopRequiredFields
-        .map((field) => DESKTOP_REQUIRED_FIELD_LABELS[field])
+        .map((field) => text.desktopFieldLabels[field])
         .join(", ");
-      return `Desktop config incomplete. Please fill: ${labels}.`;
+      return appText.desktopConfigIncompleteFill(labels);
     }
 
     if (desktopConfigMessage) {
@@ -762,19 +776,21 @@ function App() {
     }
 
     if (desktopConfigSource === "local") {
-      return "Desktop config source: local file.";
+      return appText.desktopConfigSourceLocal;
     }
 
     if (desktopConfigSource === "env") {
-      return "Desktop config source: .env defaults.";
+      return appText.desktopConfigSourceEnv;
     }
 
-    return "Desktop config source: renderer input (not saved yet).";
+    return appText.desktopConfigSourceRenderer;
   }, [
+    appText,
     desktopConfigMessage,
     desktopConfigSource,
     isDesktopRuntime,
     missingDesktopRequiredFields,
+    text.desktopFieldLabels,
   ]);
 
   const handleConnect = useCallback(async () => {
@@ -783,10 +799,10 @@ function App() {
       missingDesktopRequiredFields.length > 0
     ) {
       const labels = missingDesktopRequiredFields
-        .map((field) => DESKTOP_REQUIRED_FIELD_LABELS[field])
+        .map((field) => text.desktopFieldLabels[field])
         .join(", ");
       setDesktopConfigMessage(
-        `Desktop config incomplete. Missing: ${labels}.`,
+        appText.desktopConfigIncompleteMissing(labels),
       );
       setMqttEnabled(false);
       return;
@@ -802,7 +818,7 @@ function App() {
       });
       if (!saveResult.ok) {
         setDesktopConfigMessage(
-          saveResult.message ?? "Failed to persist desktop config.",
+          saveResult.message ?? appText.desktopPersistFailed,
         );
         setMqttEnabled(false);
         return;
@@ -820,6 +836,8 @@ function App() {
     missingDesktopRequiredFields,
     mqttPassword,
     mqttUsername,
+    appText,
+    text.desktopFieldLabels,
   ]);
 
   const canConnect =
@@ -845,26 +863,26 @@ function App() {
       if (!skipChecks) {
         if (sequenceRunning) {
           window.alert(
-            "Sequence running. Please wait for it to finish before sending manual commands.",
+            appText.alertSequenceRunning,
           );
           return null;
         }
         if (onlineState !== "online") {
           window.alert(
-            "PSDK is offline. Please confirm the device is online before sending commands.",
+            appText.alertPsdkOfflineSend,
           );
           return null;
         }
 
         if (!isConnected) {
-          window.alert("MQTT not connected. Please connect before sending.");
+          window.alert(appText.alertMqttDisconnectedSend);
           return null;
         }
       }
 
       if (!servicesTopic) {
         if (!skipChecks) {
-          window.alert("Missing Gateway SN. Unable to send commands.");
+          window.alert(appText.alertMissingGatewaySend);
         }
         return null;
       }
@@ -906,6 +924,7 @@ function App() {
       publish,
       sequenceRunning,
       servicesTopic,
+      appText,
     ],
   );
 
@@ -1041,12 +1060,12 @@ function App() {
     const normalizedMd5 = audioMd5.trim();
 
     if (!normalizedName || !normalizedUrl || !normalizedMd5) {
-      window.alert("Audio name, URL, and MD5 are required.");
+      window.alert(appText.alertAudioRequired);
       return;
     }
 
     if (!audioValid) {
-      window.alert("Please click Validate Audio and wait for a successful result before sending.");
+      window.alert(appText.alertValidateAudioFirst);
       return;
     }
 
@@ -1319,24 +1338,22 @@ function App() {
     if (sequenceRunning) return;
 
     if (sequenceSteps.length === 0) {
-      window.alert("Sequence is empty. Please add steps first.");
+      window.alert(appText.alertSequenceEmpty);
       return;
     }
 
     if (onlineState !== "online") {
-      window.alert(
-        "PSDK is offline. Please confirm the device is online before running.",
-      );
+      window.alert(appText.alertPsdkOfflineRun);
       return;
     }
 
     if (!isConnected) {
-      window.alert("MQTT not connected. Please connect before running.");
+      window.alert(appText.alertMqttDisconnectedRun);
       return;
     }
 
     if (!servicesTopic) {
-      window.alert("Missing Gateway SN. Unable to run sequence.");
+      window.alert(appText.alertMissingGatewayRun);
       return;
     }
 
@@ -1439,10 +1456,12 @@ function App() {
         const stepMethod = stepsSnapshot[index]?.method ?? "unknown";
         const failureMessage =
           result.status === "timeout"
-            ? `Step ${index + 1} (${stepMethod}) timed out (10s).`
-            : `Step ${index + 1} (${stepMethod}) failed (result ${
-                result.result ?? "N/A"
-              }).`;
+            ? appText.sequenceStepTimeout(index + 1, stepMethod)
+            : appText.sequenceStepFailure(
+                index + 1,
+                stepMethod,
+                result.result ?? commonText.na,
+              );
         setSequenceError(failureMessage);
         setSequenceStatus("failure");
         setSequenceActiveIndex(null);
@@ -1500,6 +1519,8 @@ function App() {
     sequenceSteps,
     sequenceDefaults.waitSeconds,
     servicesTopic,
+    appText,
+    commonText.na,
   ]);
 
   const stopSequence = useCallback(() => {
@@ -1528,17 +1549,19 @@ function App() {
   const canRunSequence = sequenceSteps.length > 0 && !sequenceRunning;
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen" data-language={language}>
       <div className="sticky top-3 z-30 px-6 pt-4">
         <div className="mx-auto flex max-w-6xl justify-end">
           <div className="flex flex-wrap items-center gap-3 rounded-full border border-steel-700/70 bg-coal-950/80 px-3 py-2 shadow-panel backdrop-blur">
             <StatusBadge
-              label={`MQTT ${status}`}
+              label={`MQTT ${getMqttStatusLabel(language, status)}`}
               tone={mqttStatusTone[status]}
+              language={language}
             />
             <StatusBadge
-              label={`PSDK ${onlineState}`}
+              label={`PSDK ${getOnlineStateLabel(language, onlineState)}`}
               tone={onlineTone[onlineState]}
+              language={language}
             />
           </div>
         </div>
@@ -1546,20 +1569,53 @@ function App() {
 
       <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 pb-10 pt-6">
         <header className="flex flex-col gap-4">
-          <div>
-            <p className="text-xs uppercase tracking-[0.45em] text-signal-400">
-              PSDK MQTT
-            </p>
-            <h1 className="mt-2 text-3xl text-glow">PSDK Test Console</h1>
-            <p className="mt-2 text-sm text-steel-300">
-              Manual control surface for speaker workflows, floating window
-              status, and command diagnostics.
-            </p>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="max-w-3xl">
+              <p
+                className={`text-xs text-signal-400 ${
+                  language === "zh-CN"
+                    ? "tracking-[0.16em]"
+                    : "uppercase tracking-[0.45em]"
+                }`}
+              >
+                {appText.titleTag}
+              </p>
+              <h1 className="mt-2 text-3xl text-glow">{appText.title}</h1>
+              <p className="mt-2 text-sm text-steel-300">{appText.description}</p>
+            </div>
+            <div className="language-switch-card flex flex-col gap-2 rounded-xl border border-steel-700/55 bg-coal-900/65 px-3 py-2">
+              <span className="label m-0">{appText.languageLabel}</span>
+              <div className="inline-flex overflow-hidden rounded-lg border border-steel-700/60 bg-coal-950/80">
+                <button
+                  className={`language-switch-btn px-3 py-1.5 text-xs transition ${
+                    language === "en"
+                      ? "bg-signal-500/20 text-signal-300"
+                      : "text-steel-300 hover:bg-coal-800"
+                  }`}
+                  type="button"
+                  onClick={() => setLanguage("en")}
+                >
+                  {appText.languageEn}
+                </button>
+                <button
+                  className={`language-switch-btn border-l border-steel-700/60 px-3 py-1.5 text-xs transition ${
+                    language === "zh-CN"
+                      ? "bg-signal-500/20 text-signal-300"
+                      : "text-steel-300 hover:bg-coal-800"
+                  }`}
+                  type="button"
+                  onClick={() => setLanguage("zh-CN")}
+                >
+                  {appText.languageZh}
+                </button>
+              </div>
+            </div>
           </div>
         </header>
 
         <div className="grid gap-6">
           <ConnectionPanel
+            language={language}
             status={status}
             error={error}
             desktopConfigHint={desktopConfigHint}
@@ -1586,6 +1642,7 @@ function App() {
           />
 
           {/* <LiveStatusPanel
+            language={language}
             status={status}
             onlineState={onlineState}
             lastFloatingAt={lastFloatingAt}
@@ -1595,8 +1652,9 @@ function App() {
         </div>
 
         <div className="grid gap-6">
-          <FloatingWindowPanel floatingWindow={floatingWindow} />
+          <FloatingWindowPanel language={language} floatingWindow={floatingWindow} />
           <PsdkStatePanel
+            language={language}
             activeEntry={activeEntry}
             linkedSourceType={widgetConfigSourceType}
             stateReceivedAt={psdkStateAt}
@@ -1604,6 +1662,7 @@ function App() {
         </div>
 
         <SpeakerControlPanel
+          language={language}
           pendingTotal={pendingTotal}
           commandFeedbacks={commandFeedbacks}
           removeFeedback={removeFeedback}
@@ -1662,6 +1721,7 @@ function App() {
         />
 
         <CommandSequencePanel
+          language={language}
           steps={sequenceSteps}
           results={sequenceResults}
           status={sequenceStatus}
@@ -1683,18 +1743,20 @@ function App() {
         />
 
         <CommandResultsPanel
+          language={language}
           commandLogs={commandLogs}
           logModalOpen={logModalOpen}
           setLogModalOpen={setLogModalOpen}
         />
         <PlayProgressPopup
+          language={language}
           progress={activePlayProgress}
           onClose={closePlayProgress}
         />
 
         <footer className="pt-2 text-center text-xs text-steel-500">
-          Created by <span className="text-steel-300">GARCHENG</span> · Powered
-          by <span className="text-steel-300">Codex</span>
+          {appText.footerCreatedBy} <span className="text-steel-300">GARCHENG</span>{" "}
+          · {appText.footerPoweredBy} <span className="text-steel-300">Codex</span>
         </footer>
       </div>
     </div>

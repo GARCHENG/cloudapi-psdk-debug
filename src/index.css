@@ -106,6 +106,50 @@
   .chip {
     @apply inline-flex items-center rounded-full border border-steel-700/80 bg-coal-900/85 px-3 py-1 text-xs text-steel-300;
   }
+
+  .language-switch-card {
+    @apply min-w-[9.5rem];
+  }
+
+  html[data-language='zh-CN'] .panel-title {
+    text-transform: none;
+    letter-spacing: 0.08em;
+    line-height: 1.45;
+  }
+
+  html[data-language='zh-CN'] .panel-heading {
+    letter-spacing: 0.01em;
+    line-height: 1.35;
+    word-break: break-word;
+  }
+
+  html[data-language='zh-CN'] .label {
+    text-transform: none;
+    letter-spacing: 0.1em;
+    line-height: 1.35;
+  }
+
+  html[data-language='zh-CN'] .badge {
+    text-transform: none;
+    letter-spacing: 0.06em;
+    white-space: normal;
+    line-height: 1.35;
+  }
+
+  html[data-language='zh-CN'] .btn {
+    text-transform: none;
+    letter-spacing: 0;
+    white-space: normal;
+    line-height: 1.35;
+  }
+
+  html[data-language='zh-CN'] .chip {
+    letter-spacing: 0.02em;
+  }
+
+  html[data-language='zh-CN'] .language-switch-btn {
+    min-width: 3.4rem;
+  }
 }
 
 @layer utilities {

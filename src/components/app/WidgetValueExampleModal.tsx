@@ -1,6 +1,7 @@
 import { type ChangeEvent, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { SectionHeader } from './ui'
+import { getText } from '../../lib/i18n'
 import {
   buildWidgetActions,
   type NormalizedWidgetConfig,
@@ -8,6 +9,7 @@ import {
   parseWidgetConfigJson,
 } from '../../lib/widgetConfig'
 import { resolvePublicAssetUrl } from '../../lib/publicAsset'
+import type { AppLanguage } from '../../types/app'
 
 type WidgetSourceType = 'custom' | string
 
@@ -23,6 +25,7 @@ interface WidgetConfigRegistryEntry {
 }
 
 interface WidgetValueExampleModalProps {
+  language: AppLanguage
   open: boolean
   onClose: () => void
   onPick: (pick: WidgetExamplePick) => void
@@ -39,8 +42,10 @@ const REGISTRY_URL = resolvePublicAssetUrl('/widget-configs/registry.json')
 const CUSTOM_SOURCE_TYPE = 'custom'
 const DEFAULT_SCALE_VALUE = 50
 
-const getFileReaderError = (error: DOMException | null) =>
-  error?.message || 'Failed to read file'
+const getFileReaderError = (
+  error: DOMException | null,
+  language: AppLanguage,
+) => error?.message || (language === 'zh-CN' ? '读取文件失败' : 'Failed to read file')
 
 const getWidgetTypeBadgeTone = (widgetType: string) => {
   if (widgetType === 'button') return 'border-signal-500/60 text-signal-400'
@@ -134,10 +139,13 @@ const parseRegistry = (payload: unknown): WidgetConfigRegistry => {
 }
 
 export const WidgetValueExampleModal = ({
+  language,
   open,
   onClose,
   onPick,
 }: WidgetValueExampleModalProps) => {
+  const text = getText(language).widgetExample
+  const common = getText(language).common
   const [registry, setRegistry] = useState<WidgetConfigRegistry>(buildFallbackRegistry)
   const [registryLoading, setRegistryLoading] = useState(false)
   const [registryError, setRegistryError] = useState<string | null>(null)
@@ -193,7 +201,11 @@ export const WidgetValueExampleModal = ({
         if (!cancelled) {
           setRegistry(buildFallbackRegistry())
           setRegistryError(
-            error instanceof Error ? error.message : 'Failed to load widget registry',
+            error instanceof Error
+              ? error.message
+              : language === 'zh-CN'
+                ? '加载 widget 配置索引失败'
+                : 'Failed to load widget registry',
           )
         }
       } finally {
@@ -208,7 +220,7 @@ export const WidgetValueExampleModal = ({
     return () => {
       cancelled = true
     }
-  }, [open])
+  }, [language, open])
 
   useEffect(() => {
     if (!open) {
@@ -266,7 +278,9 @@ export const WidgetValueExampleModal = ({
           setBuiltinError(
             error instanceof Error
               ? error.message
-              : `Failed to load ${sourceType} config`,
+              : language === 'zh-CN'
+                ? `加载 ${sourceType} 配置失败`
+                : `Failed to load ${sourceType} config`,
           )
         }
       } finally {
@@ -281,7 +295,7 @@ export const WidgetValueExampleModal = ({
     return () => {
       cancelled = true
     }
-  }, [activeBuiltinEntry, builtinConfigs, open, sourceType])
+  }, [activeBuiltinEntry, builtinConfigs, language, open, sourceType])
 
   const activeConfig = useMemo(() => {
     if (sourceType === CUSTOM_SOURCE_TYPE) {
@@ -335,7 +349,7 @@ export const WidgetValueExampleModal = ({
     reader.onerror = () => {
       setCustomConfig(null)
       setCustomFileName('')
-      setCustomError(getFileReaderError(reader.error))
+      setCustomError(getFileReaderError(reader.error, language))
     }
 
     reader.readAsText(selectedFile)
@@ -388,15 +402,19 @@ export const WidgetValueExampleModal = ({
         onClick={(event) => event.stopPropagation()}
       >
         <div className='flex flex-wrap items-start justify-between gap-4'>
-          <SectionHeader title='Widget Example Picker' subtitle='PSDK config_interface' />
+          <SectionHeader
+            title={text.title}
+            subtitle={text.subtitle}
+            language={language}
+          />
           <button className='btn btn-danger' onClick={onClose} type='button'>
-            Close
+            {common.close}
           </button>
         </div>
 
         <div className='mt-5 grid gap-4'>
           <div className='rounded-xl border border-steel-700/40 bg-coal-900/60 p-4'>
-            <p className='label'>Device Type</p>
+            <p className='label'>{text.deviceType}</p>
             <div className='mt-3 flex flex-wrap gap-2'>
               {registry.devices.map((entry) => (
                 <button
@@ -413,7 +431,7 @@ export const WidgetValueExampleModal = ({
                 onClick={() => setSourceType(CUSTOM_SOURCE_TYPE)}
                 type='button'
               >
-                custom
+                {common.custom}
               </button>
             </div>
 
@@ -429,7 +447,7 @@ export const WidgetValueExampleModal = ({
                   {customFileName && <span className='chip'>{customFileName}</span>}
                 </div>
                 <p className='text-xs text-steel-400'>
-                  Only JSON files with config_interface.widget_list are supported.
+                  {text.onlyJsonTip}
                 </p>
                 {customError && (
                   <p className='rounded-lg border border-warn-500/40 bg-warn-500/10 px-3 py-2 text-xs text-warn-500'>
@@ -440,7 +458,11 @@ export const WidgetValueExampleModal = ({
             )}
 
             {registryLoading && (
-              <p className='mt-3 text-xs text-steel-400'>Loading widget config registry...</p>
+              <p className='mt-3 text-xs text-steel-400'>
+                {language === 'zh-CN'
+                  ? '正在加载 widget 配置索引...'
+                  : 'Loading widget config registry...'}
+              </p>
             )}
             {registryError && (
               <p className='mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-400'>
@@ -450,7 +472,9 @@ export const WidgetValueExampleModal = ({
 
             {!isCustomSource && isBuiltinLoading && (
               <p className='mt-3 text-xs text-steel-400'>
-                Loading {sourceType} config...
+                {language === 'zh-CN'
+                  ? `正在加载 ${sourceType} 配置...`
+                  : `Loading ${sourceType} config...`}
               </p>
             )}
             {!isCustomSource && builtinError && (
@@ -462,25 +486,29 @@ export const WidgetValueExampleModal = ({
 
           <div className='rounded-xl border border-steel-700/40 bg-coal-900/60 p-4'>
             <div className='flex items-center justify-between gap-3'>
-              <p className='label'>Widget Actions</p>
+              <p className='label'>{text.widgetActions}</p>
               <span className='text-xs text-steel-400'>
-                Source: {isCustomSource ? customFileName || 'custom' : sourceType || 'N/A'}
+                {text.sourceValue(
+                  isCustomSource
+                    ? customFileName || common.custom
+                    : sourceType || getText(language).common.na,
+                )}
               </span>
             </div>
 
             {!hasSelectedSource ? (
               <div className='mt-4 rounded-lg border border-dashed border-steel-700/60 bg-coal-900/30 px-4 py-6 text-sm text-steel-400'>
-                No device type selected. Please choose one to view widget actions.
+                {text.noDeviceTypeSelected}
               </div>
             ) : !activeConfig ? (
               <div className='mt-4 rounded-lg border border-dashed border-steel-700/60 bg-coal-900/30 px-4 py-6 text-sm text-steel-400'>
                 {isCustomSource
-                  ? 'Please upload a valid widget_config.json first.'
-                  : `Waiting for ${sourceType} config to load...`}
+                  ? text.waitingCustomUpload
+                  : text.waitingBuiltinConfig(sourceType)}
               </div>
             ) : activeConfig.widgets.length === 0 ? (
               <div className='mt-4 rounded-lg border border-dashed border-steel-700/60 bg-coal-900/30 px-4 py-6 text-sm text-steel-400'>
-                No widgets available in current configuration.
+                {text.noWidgets}
               </div>
             ) : (
               <div className='mt-4 max-h-[52vh] space-y-3 overflow-auto pr-1'>
@@ -507,7 +535,9 @@ export const WidgetValueExampleModal = ({
                         <div className='flex flex-wrap items-center gap-2'>
                           <span className='text-sm text-steel-100'>{widget.widgetName}</span>
                           <span className='chip border-steel-600/70 bg-transparent text-[11px] text-steel-300'>
-                            index {widget.widgetIndex}
+                            {language === 'zh-CN'
+                              ? `索引 ${widget.widgetIndex}`
+                              : `index ${widget.widgetIndex}`}
                           </span>
                           <span
                             className={`chip bg-transparent text-[11px] uppercase ${getWidgetTypeBadgeTone(
@@ -517,7 +547,7 @@ export const WidgetValueExampleModal = ({
                             {widget.widgetType}
                           </span>
                           <span className='ml-auto text-xs text-steel-400'>
-                            {isExpanded ? 'Collapse' : 'Expand'}
+                            {isExpanded ? text.collapse : text.expand}
                           </span>
                         </div>
                       </button>
@@ -527,7 +557,7 @@ export const WidgetValueExampleModal = ({
                           {widget.widgetType === 'scale' ? (
                             <div className='mt-3 grid gap-3'>
                               <div className='flex flex-wrap items-center gap-3'>
-                                <label className='label m-0'>Scale Value</label>
+                                <label className='label m-0'>{text.scaleValue}</label>
                                 <input
                                   className='input w-24'
                                   max={100}
@@ -553,7 +583,7 @@ export const WidgetValueExampleModal = ({
                                   }
                                   type='button'
                                 >
-                                  Apply
+                                  {text.apply}
                                 </button>
                               </div>
                               <input
@@ -572,7 +602,7 @@ export const WidgetValueExampleModal = ({
                               />
                             </div>
                           ) : actions.length === 0 ? (
-                            <p className='mt-3 text-xs text-steel-400'>No actions available.</p>
+                            <p className='mt-3 text-xs text-steel-400'>{text.noActions}</p>
                           ) : (
                             <div className='mt-3 flex flex-wrap gap-2'>
                               {actions.map((action) => (
@@ -590,7 +620,7 @@ export const WidgetValueExampleModal = ({
                                 >
                                   {action.label}
                                   <span className='chip ml-1 border-steel-600/70 bg-transparent text-[11px] text-steel-400'>
-                                    value {action.value}
+                                    {text.value} {action.value}
                                   </span>
                                 </button>
                               ))}

@@ -1,6 +1,7 @@
 import { type ChangeEvent, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { SectionHeader } from './ui'
+import { getText } from '../../lib/i18n'
 import {
   getPlayModeLabel,
   getSystemStateLabel,
@@ -14,8 +15,10 @@ import {
 } from '../../lib/widgetConfig'
 import { resolvePublicAssetUrl } from '../../lib/publicAsset'
 import type { PsdkStateEntry } from '../../types/psdk'
+import type { AppLanguage } from '../../types/app'
 
 interface PsdkStatePanelProps {
+  language: AppLanguage
   activeEntry?: PsdkStateEntry
   linkedSourceType?: string
   stateReceivedAt?: number | null
@@ -37,8 +40,10 @@ interface WidgetConfigRegistryEntry {
 const REGISTRY_URL = resolvePublicAssetUrl('/widget-configs/registry.json')
 const CUSTOM_SOURCE_TYPE = 'custom'
 
-const getFileReaderError = (error: DOMException | null) =>
-  error?.message || 'Failed to read file'
+const getFileReaderError = (
+  error: DOMException | null,
+  language: AppLanguage,
+) => error?.message || (language === 'zh-CN' ? '读取文件失败' : 'Failed to read file')
 
 const getWidgetTypeBadgeTone = (widgetType: string) => {
   if (widgetType === 'button') return 'border-signal-500/60 text-signal-400'
@@ -50,21 +55,26 @@ const getWidgetTypeBadgeTone = (widgetType: string) => {
 const getWidgetStateLabel = (
   widget: NormalizedWidgetEntry | undefined,
   rawValue: number,
+  language: AppLanguage,
 ) => {
   if (!widget) {
-    return `Unmapped value (${rawValue})`
+    return language === 'zh-CN'
+      ? `未映射数值 (${rawValue})`
+      : `Unmapped value (${rawValue})`
   }
 
   if (widget.widgetType === 'button') {
-    if (rawValue === 1) return 'Triggered'
-    if (rawValue === 0) return 'Idle'
-    return `Button value ${rawValue}`
+    if (rawValue === 1) return language === 'zh-CN' ? '已触发' : 'Triggered'
+    if (rawValue === 0) return language === 'zh-CN' ? '空闲' : 'Idle'
+    return language === 'zh-CN' ? `按钮值 ${rawValue}` : `Button value ${rawValue}`
   }
 
   if (widget.widgetType === 'switch') {
-    if (rawValue === 1) return 'On'
-    if (rawValue === 0) return 'Off'
-    return `Unknown switch state (${rawValue})`
+    if (rawValue === 1) return language === 'zh-CN' ? '开启' : 'On'
+    if (rawValue === 0) return language === 'zh-CN' ? '关闭' : 'Off'
+    return language === 'zh-CN'
+      ? `未知开关状态 (${rawValue})`
+      : `Unknown switch state (${rawValue})`
   }
 
   if (widget.widgetType === 'list') {
@@ -72,10 +82,12 @@ const getWidgetStateLabel = (
     if (optionLabel) {
       return `${optionLabel} (${rawValue})`
     }
-    return `Unknown option (${rawValue})`
+    return language === 'zh-CN'
+      ? `未知选项 (${rawValue})`
+      : `Unknown option (${rawValue})`
   }
 
-  return `Scale ${rawValue}`
+  return language === 'zh-CN' ? `刻度 ${rawValue}` : `Scale ${rawValue}`
 }
 
 const buildFallbackRegistry = (): WidgetConfigRegistry => ({
@@ -163,10 +175,13 @@ const parseRegistry = (payload: unknown): WidgetConfigRegistry => {
 }
 
 export const PsdkStatePanel = ({
+  language,
   activeEntry,
   linkedSourceType = '',
   stateReceivedAt = null,
 }: PsdkStatePanelProps) => {
+  const text = getText(language).psdkState
+  const common = getText(language).common
   const [widgetStateOpen, setWidgetStateOpen] = useState(false)
 
   const [registry, setRegistry] = useState<WidgetConfigRegistry>(buildFallbackRegistry)
@@ -253,7 +268,11 @@ export const PsdkStatePanel = ({
         if (!cancelled) {
           setRegistry(buildFallbackRegistry())
           setRegistryError(
-            error instanceof Error ? error.message : 'Failed to load widget registry',
+            error instanceof Error
+              ? error.message
+              : language === 'zh-CN'
+                ? '加载 widget 配置索引失败'
+                : 'Failed to load widget registry',
           )
 
           setSourceType((previous) => {
@@ -280,7 +299,7 @@ export const PsdkStatePanel = ({
     return () => {
       cancelled = true
     }
-  }, [widgetStateOpen, linkedSourceType])
+  }, [language, linkedSourceType, widgetStateOpen])
 
   useEffect(() => {
     if (!widgetStateOpen || !linkedSourceType) {
@@ -347,7 +366,9 @@ export const PsdkStatePanel = ({
           setBuiltinError(
             error instanceof Error
               ? error.message
-              : `Failed to load ${sourceType} config`,
+              : language === 'zh-CN'
+                ? `加载 ${sourceType} 配置失败`
+                : `Failed to load ${sourceType} config`,
           )
         }
       } finally {
@@ -362,7 +383,7 @@ export const PsdkStatePanel = ({
     return () => {
       cancelled = true
     }
-  }, [activeBuiltinEntry, builtinConfigs, sourceType, widgetStateOpen])
+  }, [activeBuiltinEntry, builtinConfigs, language, sourceType, widgetStateOpen])
 
   const activeConfig = useMemo(() => {
     if (sourceType === CUSTOM_SOURCE_TYPE) {
@@ -419,7 +440,7 @@ export const PsdkStatePanel = ({
     reader.onerror = () => {
       setCustomConfig(null)
       setCustomFileName('')
-      setCustomError(getFileReaderError(reader.error))
+      setCustomError(getFileReaderError(reader.error, language))
     }
 
     reader.readAsText(selectedFile)
@@ -434,13 +455,17 @@ export const PsdkStatePanel = ({
     <>
       <section className='panel'>
         <div className='flex flex-wrap items-start justify-between gap-4'>
-          <SectionHeader title='PSDK State' subtitle='Device / Speaker' />
+          <SectionHeader
+            title={text.title}
+            subtitle={text.subtitle}
+            language={language}
+          />
           <button
             className='btn disabled:cursor-not-allowed disabled:opacity-50'
             onClick={() => setWidgetStateOpen(true)}
             disabled={!activeEntry}
           >
-            widget_state
+            {text.widgetState}
           </button>
         </div>
 
@@ -450,38 +475,40 @@ export const PsdkStatePanel = ({
               <div className='rounded-xl border border-steel-700/40 bg-coal-900/60 p-4'>
                 <div className='flex items-center justify-between'>
                   <span className='text-xs uppercase tracking-[0.2em] text-steel-400'>
-                    Active Payload
+                    {text.activePayload}
                   </span>
-                  <span className='chip'>Index {activeEntry.psdk_index}</span>
+                  <span className='chip'>{text.indexLabel(activeEntry.psdk_index)}</span>
                 </div>
                 <div className='mt-3 grid gap-2 text-xs text-steel-300'>
-                  <span>Name: {activeEntry.psdk_name ?? 'N/A'}</span>
-                  <span>SN: {activeEntry.psdk_sn ?? 'N/A'}</span>
-                  <span>Version: {activeEntry.psdk_version ?? 'N/A'}</span>
-                  <span>Lib: {activeEntry.psdk_lib_version ?? 'N/A'}</span>
-                  <span>Last /state: {formatTimestamp(stateReceivedAt)}</span>
+                  <span>{text.name}: {activeEntry.psdk_name ?? common.na}</span>
+                  <span>{text.sn}: {activeEntry.psdk_sn ?? common.na}</span>
+                  <span>{text.version}: {activeEntry.psdk_version ?? common.na}</span>
+                  <span>{text.lib}: {activeEntry.psdk_lib_version ?? common.na}</span>
+                  <span>{text.lastState}: {formatTimestamp(stateReceivedAt, language)}</span>
                 </div>
               </div>
               <div className='rounded-xl border border-steel-700/40 bg-coal-900/60 p-4'>
                 <p className='text-xs uppercase tracking-[0.2em] text-steel-400'>
-                  Speaker State
+                  {text.speakerState}
                 </p>
                 <div className='mt-3 grid gap-2 text-xs text-steel-300'>
-                  <span>Mode: {getWorkModeLabel(activeEntry.speaker?.work_mode)}</span>
                   <span>
-                    Play Mode: {getPlayModeLabel(activeEntry.speaker?.play_mode)}
+                    {text.mode}: {getWorkModeLabel(activeEntry.speaker?.work_mode, language)}
                   </span>
                   <span>
-                    System: {getSystemStateLabel(activeEntry.speaker?.system_state)}
+                    {text.playMode}: {getPlayModeLabel(activeEntry.speaker?.play_mode, language)}
                   </span>
-                  <span>Volume: {activeEntry.speaker?.play_volume ?? 'N/A'}</span>
-                  <span>File: {activeEntry.speaker?.play_file_name ?? 'N/A'}</span>
+                  <span>
+                    {text.system}: {getSystemStateLabel(activeEntry.speaker?.system_state, language)}
+                  </span>
+                  <span>{text.volume}: {activeEntry.speaker?.play_volume ?? common.na}</span>
+                  <span>{text.file}: {activeEntry.speaker?.play_file_name ?? common.na}</span>
                 </div>
               </div>
             </>
           ) : (
             <div className='rounded-xl border border-dashed border-steel-700/40 bg-coal-900/40 p-4 text-sm text-steel-400'>
-              No /state payload received yet.
+              {text.noStatePayload}
             </div>
           )}
         </div>
@@ -498,22 +525,26 @@ export const PsdkStatePanel = ({
               onClick={(event) => event.stopPropagation()}
             >
               <div className='flex flex-wrap items-start justify-between gap-4'>
-                <SectionHeader title='Widget State' subtitle='config linked view' />
+                <SectionHeader
+                  title={text.widgetModalTitle}
+                  subtitle={text.widgetModalSubtitle}
+                  language={language}
+                />
                 <button
                   className='btn btn-danger'
                   onClick={() => setWidgetStateOpen(false)}
                   type='button'
                 >
-                  Close
+                  {common.close}
                 </button>
               </div>
 
               <div className='mt-5 rounded-xl border border-steel-700/40 bg-coal-900/60 p-4'>
                 <div className='flex flex-wrap items-center gap-2'>
-                  <p className='label m-0'>Device Type</p>
+                  <p className='label m-0'>{text.deviceType}</p>
                   {linkedSourceType && (
                     <span className='chip border-signal-500/45 bg-signal-500/10 text-[11px] text-signal-400'>
-                      Linked: {linkedSourceType}
+                      {text.linked}: {linkedSourceType}
                     </span>
                   )}
                 </div>
@@ -533,7 +564,7 @@ export const PsdkStatePanel = ({
                     onClick={() => setSourceType(CUSTOM_SOURCE_TYPE)}
                     type='button'
                   >
-                    custom
+                    {common.custom}
                   </button>
                 </div>
 
@@ -549,7 +580,7 @@ export const PsdkStatePanel = ({
                       {customFileName && <span className='chip'>{customFileName}</span>}
                     </div>
                     <p className='text-xs text-steel-400'>
-                      Only JSON files with config_interface.widget_list are supported.
+                      {text.onlyJsonTip}
                     </p>
                     {customError && (
                       <p className='rounded-lg border border-warn-500/40 bg-warn-500/10 px-3 py-2 text-xs text-warn-500'>
@@ -560,7 +591,9 @@ export const PsdkStatePanel = ({
                 )}
 
                 {registryLoading && (
-                  <p className='mt-3 text-xs text-steel-400'>Loading widget config registry...</p>
+                  <p className='mt-3 text-xs text-steel-400'>
+                    {text.loadingRegistry}
+                  </p>
                 )}
                 {registryError && (
                   <p className='mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-400'>
@@ -569,7 +602,7 @@ export const PsdkStatePanel = ({
                 )}
                 {!isCustomSource && isBuiltinLoading && (
                   <p className='mt-3 text-xs text-steel-400'>
-                    Loading {sourceType} config...
+                    {text.loadingConfig(sourceType)}
                   </p>
                 )}
                 {!isCustomSource && builtinError && (
@@ -581,25 +614,29 @@ export const PsdkStatePanel = ({
 
               <div className='mt-4 rounded-xl border border-steel-700/40 bg-coal-900/60 p-4'>
                 <div className='flex flex-wrap items-center justify-between gap-3'>
-                  <p className='label'>Widget Status</p>
+                  <p className='label'>{text.widgetStatus}</p>
                   <span className='text-xs text-steel-400'>
-                    Source: {isCustomSource ? customFileName || 'custom' : sourceType || 'N/A'}
+                    {text.sourceValue(
+                      isCustomSource
+                        ? customFileName || common.custom
+                        : sourceType || common.na,
+                    )}
                   </span>
                 </div>
 
                 {widgetValues.length === 0 ? (
                   <div className='mt-4 rounded-lg border border-dashed border-steel-700/60 bg-coal-900/30 px-4 py-6 text-sm text-steel-400'>
-                    No widget values available in current /state payload.
+                    {text.noWidgetValues}
                   </div>
                 ) : (
                   <>
                     {!activeConfig && (
                       <div className='mt-4 rounded-lg border border-dashed border-steel-700/60 bg-coal-900/30 px-4 py-3 text-sm text-steel-400'>
                         {isCustomSource
-                          ? 'Please upload a valid widget_config.json first. Showing raw index/value only.'
+                          ? text.waitingCustomUpload
                           : sourceType
-                            ? `Waiting for ${sourceType} config to load. Showing raw index/value only.`
-                            : 'No device type selected. Showing raw index/value only.'}
+                            ? text.waitingBuiltinConfig(sourceType)
+                            : text.noDeviceTypeSelected}
                       </div>
                     )}
 
@@ -608,13 +645,13 @@ export const PsdkStatePanel = ({
                         <table className='w-full text-left text-xs'>
                           <thead className='bg-coal-900/70 text-steel-400'>
                             <tr>
-                              <th className='px-4 py-3'>Index</th>
-                              <th className='px-4 py-3'>Raw Value</th>
+                              <th className='px-4 py-3'>{text.index}</th>
+                              <th className='px-4 py-3'>{text.rawValue}</th>
                               {activeConfig && (
                                 <>
-                                  <th className='px-4 py-3'>Widget</th>
-                                  <th className='px-4 py-3'>Type</th>
-                                  <th className='px-4 py-3'>State</th>
+                                  <th className='px-4 py-3'>{text.widget}</th>
+                                  <th className='px-4 py-3'>{text.type}</th>
+                                  <th className='px-4 py-3'>{text.state}</th>
                                 </>
                               )}
                             </tr>
@@ -633,7 +670,7 @@ export const PsdkStatePanel = ({
                                   {activeConfig && (
                                     <>
                                       <td className='px-4 py-3 text-steel-200'>
-                                        {widget?.widgetName ?? 'Unmapped widget'}
+                                        {widget?.widgetName ?? text.unmappedWidget}
                                       </td>
                                       <td className='px-4 py-3'>
                                         {widget ? (
@@ -649,7 +686,7 @@ export const PsdkStatePanel = ({
                                         )}
                                       </td>
                                       <td className='px-4 py-3 text-steel-300'>
-                                        {getWidgetStateLabel(widget, item.value)}
+                                        {getWidgetStateLabel(widget, item.value, language)}
                                       </td>
                                     </>
                                   )}
@@ -663,7 +700,7 @@ export const PsdkStatePanel = ({
 
                     {activeConfig && missingConfigWidgets.length > 0 && (
                       <div className='mt-4 rounded-lg border border-dashed border-steel-700/50 bg-coal-900/35 px-4 py-3 text-xs text-steel-400'>
-                        Config widgets without /state value:{' '}
+                        {text.configWithoutValuePrefix}:{' '}
                         {missingConfigWidgets
                           .map((widget) => `${widget.widgetName} (index ${widget.widgetIndex})`)
                           .join(' | ')}

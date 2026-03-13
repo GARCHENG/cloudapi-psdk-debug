@@ -1,4 +1,5 @@
 ﻿import { createId } from '../lib/id'
+import type { AppLanguage } from './app'
 
 export interface BaseMessage<T = unknown> {
   bid: string
@@ -236,39 +237,69 @@ export function extractMethod(payload: unknown) {
   return typeof record.method === 'string' ? record.method : undefined
 }
 
-const PLAY_MODE_LABELS: Record<number, string> = {
-  0: 'Single Play',
-  1: 'Loop Single'
+const PLAY_MODE_LABELS: Record<AppLanguage, Record<number, string>> = {
+  en: {
+    0: 'Single Play',
+    1: 'Loop Single',
+  },
+  'zh-CN': {
+    0: '单次播放',
+    1: '单曲循环',
+  },
 }
 
-const WORK_MODE_LABELS: Record<number, string> = {
-  0: 'TTS Mode',
-  1: 'Recording Broadcast'
+const WORK_MODE_LABELS: Record<AppLanguage, Record<number, string>> = {
+  en: {
+    0: 'TTS Mode',
+    1: 'Recording Broadcast',
+  },
+  'zh-CN': {
+    0: 'TTS 模式',
+    1: '录音广播',
+  },
 }
 
-const SYSTEM_STATE_LABELS: Record<number, string> = {
-  0: 'Idle',
-  1: 'Transferring',
-  2: 'Playing',
-  3: 'Error',
-  4: 'TTS Converting',
-  99: 'Downloading'
+const SYSTEM_STATE_LABELS: Record<AppLanguage, Record<number, string>> = {
+  en: {
+    0: 'Idle',
+    1: 'Transferring',
+    2: 'Playing',
+    3: 'Error',
+    4: 'TTS Converting',
+    99: 'Downloading',
+  },
+  'zh-CN': {
+    0: '空闲',
+    1: '传输中',
+    2: '播放中',
+    3: '错误',
+    4: 'TTS 转换中',
+    99: '下载中',
+  },
 }
 
-const formatUnknown = (value?: number) =>
-  value === undefined || value === null ? 'Unknown' : `Unknown (${value})`
-
-export function getPlayModeLabel(value?: number) {
-  if (value === undefined || value === null) return formatUnknown(value)
-  return PLAY_MODE_LABELS[value] ?? formatUnknown(value)
+const formatUnknown = (language: AppLanguage, value?: number) => {
+  if (value === undefined || value === null) {
+    return language === 'zh-CN' ? '未知' : 'Unknown'
+  }
+  return language === 'zh-CN' ? `未知 (${value})` : `Unknown (${value})`
 }
 
-export function getWorkModeLabel(value?: number) {
-  if (value === undefined || value === null) return formatUnknown(value)
-  return WORK_MODE_LABELS[value] ?? formatUnknown(value)
+export function getPlayModeLabel(value?: number, language: AppLanguage = 'en') {
+  if (value === undefined || value === null) return formatUnknown(language, value)
+  return PLAY_MODE_LABELS[language][value] ?? formatUnknown(language, value)
 }
 
-export function getSystemStateLabel(value?: number) {
-  if (value === undefined || value === null) return formatUnknown(value)
-  return SYSTEM_STATE_LABELS[value] ?? formatUnknown(value)
+export function getWorkModeLabel(value?: number, language: AppLanguage = 'en') {
+  if (value === undefined || value === null) return formatUnknown(language, value)
+  return WORK_MODE_LABELS[language][value] ?? formatUnknown(language, value)
 }
+
+export function getSystemStateLabel(
+  value?: number,
+  language: AppLanguage = 'en',
+) {
+  if (value === undefined || value === null) return formatUnknown(language, value)
+  return SYSTEM_STATE_LABELS[language][value] ?? formatUnknown(language, value)
+}
+
