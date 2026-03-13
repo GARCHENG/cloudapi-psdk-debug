@@ -18,5 +18,5 @@
 
 - [x] 4.1 运行 `npm run lint`，修复本地化与样式改动引入的静态检查问题
 - [x] 4.2 运行 `npm run build` 与 `npm run build:desktop`，确认 Web 和桌面构建链路均可通过
-- [ ] 4.3 手工验证 `en` 与 `zh-CN` 两种语言下的 MQTT 连接、命令发布、`services_reply` 成功/失败处理和 timeout 行为，确认 topic、payload 与 ACK 判定未发生变化
-- [ ] 4.4 手工验证中文界面的标题、标签、按钮、placeholder、空态、错误提示、序列卡片、日志表格与 raw 诊断标识显示，确认中文排版稳定且 method code / `tid` / MD5 未被翻译
+- [x] 4.3 手工验证 `en` 与 `zh-CN` 两种语言下的 MQTT 连接、命令发布、`services_reply` 成功/失败处理和 timeout 行为，确认 topic、payload 与 ACK 判定未发生变化
+- [x] 4.4 手工验证中文界面的标题、标签、按钮、placeholder、空态、错误提示、序列卡片、日志表格与 raw 诊断标识显示，确认中文排版稳定且 method code / `tid` / MD5 未被翻译
